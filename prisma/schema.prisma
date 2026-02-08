@@ -1,0 +1,1005 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// CORE MODELS - YOUR EXISTING + CLINIC MODEL
+// ============================================
+
+model Clinic {
+  id        String   @id @default(uuid())
+  name      String
+  address   String?
+  phone     String?
+  email     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  bills            Bill[]
+  payments         Payment[]
+  patientLedgers   PatientLedger[]
+  expenses         Expense[]
+  staff            Staff[]
+  staffAttendance  StaffAttendance[]
+  staffLeaves      StaffLeave[]
+  leaveBalances    LeaveBalance[]
+  payrolls         Payroll[]
+  staffPerformance StaffPerformance[]
+
+  @@map("clinics")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  createdAt DateTime @default(now())
+
+  // Billing relations
+  billedBills      Bill[]    @relation("BilledBy")
+  finalizedBills   Bill[]    @relation("FinalizedBy")
+  paymentsReceived Payment[] @relation("ReceivedBy")
+  expensesAdded    Expense[] @relation("AddedBy")
+  expensesApproved Expense[] @relation("ApprovedBy")
+
+  // Staff relations
+  staff            Staff?            @relation("UserStaff")
+  attendanceMarked StaffAttendance[] @relation("MarkedBy")
+  leavesReviewed   StaffLeave[]      @relation("ReviewedBy")
+  payrollGenerated Payroll[]         @relation("GeneratedBy")
+  payrollPaid      Payroll[]         @relation("PaidBy")
+}
+
+model Patient {
+  id               String   @id @default(uuid())
+  registrationId   Int      @unique @default(autoincrement())
+  fullName         String
+  dateOfBirth      DateTime
+  age              Int
+  gender           String
+  phoneNumber      String
+  email            String?
+  bloodGroup       String?
+  addressLine1     String?
+  addressLine2     String?
+  postalCode       String?
+  city             String?
+  state            String?
+  constitutionType String   @default("Not assessed yet")
+  treatmentCount   Int      @default(0)
+  lastVisit        DateTime @default(now())
+  notes            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  appointments   Appointment[]
+  Prescription   Prescription[]
+  bills          Bill[]
+  payments       Payment[]
+  patientLedgers PatientLedger[]
+  TherapyPlan    TherapyPlan[]
+  DietPlan       DietPlan[]
+
+  @@index([fullName])
+  @@index([phoneNumber])
+  @@map("patients")
+}
+
+model Appointment {
+  id        String   @id @default(uuid())
+  patientId String?
+  patient   Patient? @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  guestName  String?
+  guestPhone String?
+  guestEmail String?
+
+  appointmentDate DateTime
+  appointmentTime String
+  duration        Int      @default(30)
+
+  reason String
+  status String  @default("scheduled")
+  notes  String?
+
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  Prescription Prescription[]
+  bills        Bill[]
+
+  @@index([appointmentDate])
+  @@index([patientId])
+  @@index([status])
+  @@map("appointments")
+}
+
+model Medicine {
+  id           String  @id @default(uuid())
+  name         String
+  genericName  String?
+  manufacturer String?
+  type         String
+  strength     String?
+  unit         String
+  description  String? @db.Text
+
+  currentStock Int @default(0)
+  reorderLevel Int @default(10)
+
+  purchasePrice Float @default(0)
+  sellingPrice  Float @default(0)
+  mrp           Float @default(0)
+
+  batchNumber String?
+  expiryDate  DateTime?
+  barcode     String?   @unique
+
+  categories   MedicineCategory[]
+  transactions StockTransaction[]
+
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  PrescriptionMedicine PrescriptionMedicine[]
+
+  @@index([name])
+  @@index([type])
+  @@index([currentStock])
+  @@index([expiryDate])
+}
+
+model Category {
+  id          String  @id @default(uuid())
+  name        String  @unique
+  description String? @db.Text
+  type        String  @default("Disease")
+  color       String?
+
+  medicines MedicineCategory[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([name])
+  @@index([type])
+}
+
+model MedicineCategory {
+  id         String @id @default(uuid())
+  medicineId String
+  categoryId String
+
+  medicine Medicine @relation(fields: [medicineId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([medicineId, categoryId])
+  @@index([medicineId])
+  @@index([categoryId])
+}
+
+model StockTransaction {
+  id              String  @id @default(uuid())
+  medicineId      String
+  type            String
+  quantity        Int
+  balanceAfter    Int
+  reason          String?
+  referenceNumber String?
+  notes           String? @db.Text
+
+  medicine Medicine @relation(fields: [medicineId], references: [id], onDelete: Cascade)
+
+  userId String?
+
+  transactionDate DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  @@index([medicineId])
+  @@index([type])
+  @@index([transactionDate])
+}
+
+model Prescription {
+  id             String @id @default(uuid())
+  prescriptionNo Int    @unique @default(autoincrement())
+
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id])
+
+  appointmentId String?
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
+
+  chiefComplaints String
+  symptoms        String? @db.Text
+  diagnosis       String?
+  vitals          String? @db.Text
+
+  medicines PrescriptionMedicine[]
+
+  instructions  String?   @db.Text
+  dietaryAdvice String?   @db.Text
+  followUpDate  DateTime?
+  followUpNotes String?   @db.Text
+
+  status String @default("DRAFT")
+
+  createdBy String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bills Bill[]
+
+  @@map("prescriptions")
+}
+
+model PrescriptionMedicine {
+  id String @id @default(uuid())
+
+  prescriptionId String
+  prescription   Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+
+  medicineId String
+  medicine   Medicine @relation(fields: [medicineId], references: [id])
+
+  medicineName String
+  medicineType String?
+  strength     String?
+  manufacturer String?
+
+  dosageFormat    String
+  dosageMorning   Int    @default(0)
+  dosageAfternoon Int    @default(0)
+  dosageEvening   Int    @default(0)
+  dosageNight     Int    @default(0)
+
+  duration     Int
+  durationUnit String  @default("DAYS")
+  timing       String  @default("After Food")
+  frequency    String?
+  route        String?
+  instructions String?
+
+  quantityNeeded Int    @default(1)
+  unitType       String @default("Strip")
+  stockAvailable Int?
+  orderIndex     Int    @default(0)
+
+  createdAt DateTime @default(now())
+
+  @@map("prescription_medicines")
+}
+
+// ============================================
+// SOCIAL MEDIA COMMUNICATION MODULE
+// ============================================
+
+model SocialAccount {
+  id String @id @default(uuid())
+
+  platform    String
+  accountName String
+  accountId   String
+  username    String?
+
+  accessToken  String?   @db.Text
+  refreshToken String?   @db.Text
+  tokenExpiry  DateTime?
+
+  isActive Boolean   @default(true)
+  lastSync DateTime?
+
+  profilePicture String?
+  followers      Int?
+
+  platformPosts PlatformPost[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([platform, accountId])
+  @@index([platform])
+  @@index([isActive])
+  @@map("social_accounts")
+}
+
+model PostTemplate {
+  id          String  @id @default(uuid())
+  name        String
+  description String?
+  content     String  @db.Text
+
+  platforms String[]
+
+  mediaSlots Int @default(0)
+
+  category String?
+  tags     String[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([category])
+  @@map("post_templates")
+}
+
+model SocialPost {
+  id String @id @default(uuid())
+
+  content  String   @db.Text
+  hashtags String[]
+
+  media SocialMedia[]
+
+  status       String    @default("DRAFT")
+  scheduledFor DateTime?
+  publishedAt  DateTime?
+
+  platformPosts PlatformPost[]
+
+  templateId String?
+
+  createdBy String?
+  notes     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([scheduledFor])
+  @@index([createdAt])
+  @@map("social_posts")
+}
+
+model SocialMedia {
+  id     String     @id @default(uuid())
+  postId String
+  post   SocialPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  type      String
+  url       String
+  publicId  String?
+  thumbnail String?
+  altText   String?
+
+  duration Int?
+  size     Int?
+
+  width  Int?
+  height Int?
+
+  order Int @default(0)
+
+  createdAt DateTime @default(now())
+
+  @@index([postId])
+  @@map("social_media")
+}
+
+model PlatformPost {
+  id     String     @id @default(uuid())
+  postId String
+  post   SocialPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  accountId String
+  account   SocialAccount @relation(fields: [accountId], references: [id])
+
+  platform String
+
+  platformPostId String?
+  platformUrl    String?
+
+  status      String    @default("PENDING")
+  publishedAt DateTime?
+  error       String?   @db.Text
+
+  likes        Int?
+  comments     Int?
+  shares       Int?
+  views        Int?
+  lastSyncedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([postId])
+  @@index([accountId])
+  @@index([platform])
+  @@index([status])
+  @@map("platform_posts")
+}
+
+// ============================================
+// BILLING MODULE MODELS
+// ============================================
+
+model BillingItem {
+  id            String   @id @default(cuid())
+  name          String   @db.VarChar(255)
+  description   String?  @db.Text
+  type          String
+  unitPrice     Decimal  @db.Decimal(10, 2)
+  quantity      Int      @default(1)
+  taxPercentage Decimal  @default(0) @db.Decimal(5, 2)
+  category      String?  @db.VarChar(100)
+  isActive      Boolean  @default(true)
+  clinicId      String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([clinicId])
+  @@index([type])
+  @@map("billing_items")
+}
+
+model Bill {
+  id             String        @id @default(cuid())
+  billNumber     String        @unique @db.VarChar(50)
+  patientId      String
+  patient        Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  appointmentId  String?
+  appointment    Appointment?  @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  prescriptionId String?
+  prescription   Prescription? @relation(fields: [prescriptionId], references: [id], onDelete: SetNull)
+
+  status String @default("DRAFT")
+
+  subtotal           Decimal @default(0) @db.Decimal(10, 2)
+  discountAmount     Decimal @default(0) @db.Decimal(10, 2)
+  discountPercentage Decimal @default(0) @db.Decimal(5, 2)
+  taxAmount          Decimal @default(0) @db.Decimal(10, 2)
+  totalAmount        Decimal @db.Decimal(10, 2)
+  paidAmount         Decimal @default(0) @db.Decimal(10, 2)
+  balanceAmount      Decimal @default(0) @db.Decimal(10, 2)
+
+  notes           String? @db.Text
+  termsConditions String? @db.Text
+
+  billedBy        String?
+  billedByUser    User?     @relation("BilledBy", fields: [billedBy], references: [id], onDelete: SetNull)
+  finalizedBy     String?
+  finalizedByUser User?     @relation("FinalizedBy", fields: [finalizedBy], references: [id], onDelete: SetNull)
+  finalizedAt     DateTime?
+
+  dueDate DateTime?
+
+  clinicId  String
+  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  billItems   BillItem[]
+  payments    Payment[]
+  TherapyPlan TherapyPlan[]
+
+  @@index([patientId])
+  @@index([status])
+  @@index([clinicId])
+  @@index([billNumber])
+  @@index([createdAt])
+  @@map("bills")
+}
+
+model BillItem {
+  id     String @id @default(cuid())
+  billId String
+  bill   Bill   @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  itemName    String  @db.VarChar(255)
+  description String? @db.Text
+  itemType    String
+
+  quantity       Int     @default(1)
+  unitPrice      Decimal @db.Decimal(10, 2)
+  taxPercentage  Decimal @default(0) @db.Decimal(5, 2)
+  taxAmount      Decimal @default(0) @db.Decimal(10, 2)
+  discountAmount Decimal @default(0) @db.Decimal(10, 2)
+  totalAmount    Decimal @db.Decimal(10, 2)
+
+  referenceId   String? @db.VarChar(191)
+  referenceType String? @db.VarChar(50)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([billId])
+  @@map("bill_items")
+}
+
+model Payment {
+  id            String  @id @default(cuid())
+  paymentNumber String  @unique @db.VarChar(50)
+  billId        String
+  bill          Bill    @relation(fields: [billId], references: [id], onDelete: Cascade)
+  patientId     String
+  patient       Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  amount        Decimal @db.Decimal(10, 2)
+  paymentMethod String
+  paymentStatus String  @default("COMPLETED")
+
+  transactionId   String? @db.VarChar(255)
+  referenceNumber String? @db.VarChar(255)
+
+  notes String? @db.Text
+
+  receivedBy     String?
+  receivedByUser User?    @relation("ReceivedBy", fields: [receivedBy], references: [id], onDelete: SetNull)
+  paymentDate    DateTime @default(now())
+
+  clinicId  String
+  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([billId])
+  @@index([patientId])
+  @@index([clinicId])
+  @@index([paymentDate])
+  @@map("payments")
+}
+
+model PatientLedger {
+  id        String  @id @default(cuid())
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  transactionType String
+  referenceId     String? @db.VarChar(191)
+  referenceType   String? @db.VarChar(50)
+
+  debitAmount  Decimal @default(0) @db.Decimal(10, 2)
+  creditAmount Decimal @default(0) @db.Decimal(10, 2)
+  balance      Decimal @db.Decimal(10, 2)
+
+  description     String?  @db.Text
+  transactionDate DateTime @default(now())
+
+  clinicId  String
+  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([patientId])
+  @@index([clinicId])
+  @@index([transactionDate])
+  @@map("patient_ledger")
+}
+
+model Expense {
+  id            String @id @default(cuid())
+  expenseNumber String @unique @db.VarChar(50)
+
+  category    String
+  subcategory String? @db.VarChar(100)
+
+  amount      Decimal @db.Decimal(10, 2)
+  description String? @db.Text
+
+  vendorName    String? @db.VarChar(255)
+  paymentMethod String?
+
+  expenseDate   DateTime
+  paymentStatus String   @default("PAID")
+
+  receiptUrl String? @db.VarChar(500)
+
+  addedBy        String?
+  addedByUser    User?   @relation("AddedBy", fields: [addedBy], references: [id], onDelete: SetNull)
+  approvedBy     String?
+  approvedByUser User?   @relation("ApprovedBy", fields: [approvedBy], references: [id], onDelete: SetNull)
+
+  clinicId  String
+  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clinicId])
+  @@index([category])
+  @@index([expenseDate])
+  @@map("expenses")
+}
+
+// ============================================
+// STAFF MANAGEMENT MODULE MODELS
+// ============================================
+
+model Staff {
+  id         String @id @default(cuid())
+  employeeId String @unique @db.VarChar(50)
+
+  firstName      String  @db.VarChar(100)
+  lastName       String  @db.VarChar(100)
+  email          String  @unique @db.VarChar(255)
+  phone          String  @db.VarChar(20)
+  alternatePhone String? @db.VarChar(20)
+
+  dateOfBirth DateTime?
+  gender      String?
+  bloodGroup  String?   @db.VarChar(10)
+
+  addressLine1 String? @db.VarChar(255)
+  addressLine2 String? @db.VarChar(255)
+  city         String? @db.VarChar(100)
+  state        String? @db.VarChar(100)
+  pincode      String? @db.VarChar(10)
+
+  aadhaarNumber String? @db.VarChar(12)
+  panNumber     String? @db.VarChar(10)
+
+  emergencyContactName     String? @db.VarChar(100)
+  emergencyContactPhone    String? @db.VarChar(20)
+  emergencyContactRelation String? @db.VarChar(50)
+
+  role        String
+  department  String? @db.VarChar(100)
+  designation String? @db.VarChar(100)
+
+  joiningDate    DateTime
+  employmentType String   @default("FULL_TIME")
+
+  qualification   String?   @db.VarChar(255)
+  specialization  String?   @db.VarChar(255)
+  experienceYears Int       @default(0)
+  licenseNumber   String?   @db.VarChar(100)
+  licenseExpiry   DateTime?
+
+  basicSalary     Decimal @db.Decimal(10, 2)
+  allowances      Decimal @default(0) @db.Decimal(10, 2)
+  hra             Decimal @default(0) @db.Decimal(10, 2)
+  otherAllowances Decimal @default(0) @db.Decimal(10, 2)
+
+  bankName          String? @db.VarChar(100)
+  accountNumber     String? @db.VarChar(50)
+  ifscCode          String? @db.VarChar(20)
+  accountHolderName String? @db.VarChar(100)
+
+  status            String    @default("ACTIVE")
+  terminationDate   DateTime?
+  terminationReason String?   @db.Text
+
+  userId   String? @unique
+  user     User?   @relation("UserStaff", fields: [userId], references: [id], onDelete: SetNull)
+  canLogin Boolean @default(false)
+
+  profilePicture String? @db.VarChar(500)
+
+  clinicId  String
+  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  documents     StaffDocument[]
+  attendance    StaffAttendance[]
+  leaves        StaffLeave[]
+  leaveBalances LeaveBalance[]
+  payrolls      Payroll[]
+  performance   StaffPerformance[]
+
+  @@index([clinicId])
+  @@index([role])
+  @@index([status])
+  @@index([employeeId])
+  @@map("staff")
+}
+
+model StaffDocument {
+  id      String @id @default(cuid())
+  staffId String
+  staff   Staff  @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  documentType String
+  documentName String @db.VarChar(255)
+  documentUrl  String @db.VarChar(500)
+
+  issueDate  DateTime?
+  expiryDate DateTime?
+
+  uploadedBy String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([staffId])
+  @@map("staff_documents")
+}
+
+model StaffAttendance {
+  id      String @id @default(cuid())
+  staffId String
+  staff   Staff  @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  attendanceDate DateTime
+
+  clockIn  String? @db.VarChar(10)
+  clockOut String? @db.VarChar(10)
+
+  status String
+
+  totalHours Decimal @default(0) @db.Decimal(5, 2)
+
+  notes String? @db.Text
+
+  markedBy     String?
+  markedByUser User?   @relation("MarkedBy", fields: [markedBy], references: [id], onDelete: SetNull)
+
+  clinicId  String
+  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([staffId, attendanceDate])
+  @@index([staffId])
+  @@index([attendanceDate])
+  @@index([clinicId])
+  @@map("staff_attendance")
+}
+
+model StaffLeave {
+  id      String @id @default(cuid())
+  staffId String
+  staff   Staff  @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  leaveType String
+
+  startDate DateTime
+  endDate   DateTime
+  totalDays Int
+
+  reason String? @db.Text
+
+  status String @default("PENDING")
+
+  appliedDate    DateTime  @default(now())
+  reviewedBy     String?
+  reviewedByUser User?     @relation("ReviewedBy", fields: [reviewedBy], references: [id], onDelete: SetNull)
+  reviewedDate   DateTime?
+  reviewNotes    String?   @db.Text
+
+  clinicId  String
+  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([staffId])
+  @@index([status])
+  @@index([startDate, endDate])
+  @@map("staff_leaves")
+}
+
+model LeaveBalance {
+  id      String @id @default(cuid())
+  staffId String
+  staff   Staff  @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  year    Int
+
+  sickLeaveTotal   Int @default(12)
+  sickLeaveUsed    Int @default(0)
+  sickLeaveBalance Int @default(12)
+
+  casualLeaveTotal   Int @default(12)
+  casualLeaveUsed    Int @default(0)
+  casualLeaveBalance Int @default(12)
+
+  earnedLeaveTotal   Int @default(15)
+  earnedLeaveUsed    Int @default(0)
+  earnedLeaveBalance Int @default(15)
+
+  clinicId  String
+  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([staffId, year])
+  @@index([staffId])
+  @@map("leave_balance")
+}
+
+model Payroll {
+  id            String @id @default(cuid())
+  payrollNumber String @unique @db.VarChar(50)
+  staffId       String
+  staff         Staff  @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  month Int
+  year  Int
+
+  basicSalary     Decimal @db.Decimal(10, 2)
+  allowances      Decimal @default(0) @db.Decimal(10, 2)
+  hra             Decimal @default(0) @db.Decimal(10, 2)
+  otherAllowances Decimal @default(0) @db.Decimal(10, 2)
+
+  daysPresent      Int @default(0)
+  daysAbsent       Int @default(0)
+  totalWorkingDays Int @default(0)
+
+  absenceDeduction Decimal @default(0) @db.Decimal(10, 2)
+  otherDeductions  Decimal @default(0) @db.Decimal(10, 2)
+
+  grossSalary     Decimal @db.Decimal(10, 2)
+  totalDeductions Decimal @default(0) @db.Decimal(10, 2)
+  netSalary       Decimal @db.Decimal(10, 2)
+
+  paymentStatus    String    @default("PENDING")
+  paymentDate      DateTime?
+  paymentMethod    String?   @default("BANK_TRANSFER")
+  paymentReference String?   @db.VarChar(255)
+
+  notes String? @db.Text
+
+  generatedBy     String?
+  generatedByUser User?   @relation("GeneratedBy", fields: [generatedBy], references: [id], onDelete: SetNull)
+  paidBy          String?
+  paidByUser      User?   @relation("PaidBy", fields: [paidBy], references: [id], onDelete: SetNull)
+
+  clinicId  String
+  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([staffId, month, year])
+  @@index([staffId])
+  @@index([paymentStatus])
+  @@index([month, year])
+  @@map("payroll")
+}
+
+model StaffPerformance {
+  id      String @id @default(cuid())
+  staffId String
+  staff   Staff  @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  month Int
+  year  Int
+
+  patientsHandled       Int     @default(0)
+  appointmentsCompleted Int     @default(0)
+  revenueGenerated      Decimal @default(0) @db.Decimal(10, 2)
+
+  punctualityScore     Decimal @default(0) @db.Decimal(3, 2)
+  attendancePercentage Decimal @default(0) @db.Decimal(5, 2)
+
+  patientRating Decimal @default(0) @db.Decimal(3, 2)
+  totalReviews  Int     @default(0)
+
+  notes String? @db.Text
+
+  clinicId  String
+  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([staffId, month, year])
+  @@index([staffId])
+  @@map("staff_performance")
+}
+
+// ============================================
+// THERAPY MANAGEMENT MODULE
+// Copy-paste this at the END of your schema.prisma file
+// ============================================
+
+model TherapyPlan {
+  id         String @id @default(cuid())
+  planNumber String @unique @db.VarChar(50)
+
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  therapyTypes String[]
+
+  startDate     DateTime
+  endDate       DateTime
+  totalSessions Int
+
+  frequency String
+
+  status String @default("ACTIVE")
+
+  pricePerSession Decimal @default(0) @db.Decimal(10, 2)
+  totalAmount     Decimal @default(0) @db.Decimal(10, 2)
+
+  billId String?
+  bill   Bill?   @relation(fields: [billId], references: [id], onDelete: SetNull)
+
+  notes        String? @db.Text
+  instructions String? @db.Text
+
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions TherapySession[]
+
+  @@index([patientId])
+  @@index([status])
+  @@index([startDate])
+  @@map("therapy_plans")
+}
+
+model TherapySession {
+  id     String      @id @default(cuid())
+  planId String
+  plan   TherapyPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  sessionNumber Int
+  therapyType   String
+
+  scheduledDate DateTime
+  scheduledTime String?
+
+  status String @default("SCHEDULED")
+
+  completedAt DateTime?
+  completedBy String?
+  duration    Int?
+
+  observations String? @db.Text
+  vitals       String? @db.Text
+
+  patientFeedback String? @db.Text
+  discomfort      String?
+
+  rescheduledFrom DateTime?
+  rescheduledTo   DateTime?
+  rescheduledNote String?   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([planId])
+  @@index([scheduledDate])
+  @@index([status])
+  @@map("therapy_sessions")
+}
+
+// ============================================
+// DIET MANAGEMENT MODULE
+// Add these models to your schema.prisma file
+// ============================================
+
+model DietPlan {
+  id         String @id @default(cuid())
+  planNumber String @unique @db.VarChar(50)
+
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  constitution String // VATA, PITTA, KAPHA, TRIDOSHA
+  season       String // SPRING, SUMMER, MONSOON, AUTUMN, WINTER
+
+  status String @default("ACTIVE") // ACTIVE, ARCHIVED
+
+  // Meals stored as JSON for flexibility
+  morningMeal String @db.Text
+  lunchMeal   String @db.Text
+  eveningMeal String @db.Text
+
+  // Additional info
+  guidelines   String? @db.Text
+  restrictions String? @db.Text
+  notes        String? @db.Text
+
+  // Tracking
+  followUpDate DateTime?
+  compliance   String?   @default("NOT_ASSESSED") // FOLLOWING, PARTIAL, NOT_FOLLOWING, NOT_ASSESSED
+
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([patientId])
+  @@index([constitution])
+  @@index([season])
+  @@index([status])
+  @@map("diet_plans")
+}
+
+// Also add this line to Patient model:
+// dietPlans DietPlan[]
