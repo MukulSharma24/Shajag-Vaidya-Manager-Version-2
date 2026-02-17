@@ -1,6 +1,4 @@
 // src/app/api/auth/login/route.ts
-export const dynamic = "force-dynamic";
-
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyPassword, signJWT } from '@/lib/auth';
