@@ -10,15 +10,6 @@ interface Staff {
     department: string;
 }
 
-interface Attendance {
-    id?: string;
-    staffId: string;
-    date: string;
-    status: string;
-    clockIn: string | null;
-    clockOut: string | null;
-}
-
 interface AttendanceRecord {
     staffId: string;
     date: string;
@@ -45,9 +36,20 @@ export default function AttendancePage() {
 
     const fetchStaff = async () => {
         try {
-            const res = await fetch('/api/staff');
+            const clinicId = localStorage.getItem('clinicId') || 'default-clinic';
+            const res = await fetch(`/api/staff?status=ACTIVE&clinicId=${clinicId}`);
             const data = await res.json();
-            setStaff(data.staff || []);
+
+            // ✅ FIX: Map staff with fullName
+            const mappedStaff = (data.staff || []).map((s: any) => ({
+                id: s.id,
+                employeeId: s.employeeId,
+                fullName: `${s.firstName} ${s.lastName}`,
+                role: s.role,
+                department: s.department || s.designation || 'N/A'
+            }));
+
+            setStaff(mappedStaff);
         } catch (error) {
             console.error('Error fetching staff:', error);
         }
@@ -55,11 +57,12 @@ export default function AttendancePage() {
 
     const fetchAttendance = async () => {
         try {
-            const res = await fetch(`/api/staff/attendance?date=${date}`);
+            const clinicId = localStorage.getItem('clinicId') || 'default-clinic';
+            const res = await fetch(`/api/staff/attendance?date=${date}&clinicId=${clinicId}`);
             const data = await res.json();
 
-            const attendanceMap = new Map<string, Attendance>(
-                (data.attendance || []).map((att: Attendance) => [att.staffId, att])
+            const attendanceMap = new Map<string, any>(
+                (data.attendance || []).map((att: any) => [att.staffId, att])
             );
 
             const updated: AttendanceRecord[] = staff.map(s => {
@@ -67,7 +70,7 @@ export default function AttendancePage() {
                 if (att) {
                     return {
                         staffId: s.id,
-                        date: att.date,
+                        date: att.attendanceDate,
                         status: att.status,
                         clockIn: att.clockIn || '09:00',
                         clockOut: att.clockOut || '18:00',
@@ -100,10 +103,16 @@ export default function AttendancePage() {
     const handleSave = async () => {
         try {
             setLoading(true);
+            const clinicId = localStorage.getItem('clinicId') || 'default-clinic';
+
             const res = await fetch('/api/staff/attendance', {
-                method: 'POST',
+                method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ attendance: attendanceRecords }),
+                body: JSON.stringify({
+                    date,
+                    attendanceRecords,
+                    clinicId
+                }),
             });
 
             if (res.ok) {

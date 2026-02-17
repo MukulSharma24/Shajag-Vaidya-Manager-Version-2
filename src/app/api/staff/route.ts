@@ -11,13 +11,9 @@ export async function GET(req: NextRequest) {
         const search = searchParams.get('search');
         const page = parseInt(searchParams.get('page') || '1');
         const limit = parseInt(searchParams.get('limit') || '20');
-        const clinicId = searchParams.get('clinicId');
+        const clinicId = searchParams.get('clinicId') || 'default-clinic';
 
-        const where: any = {};
-
-        if (clinicId) {
-            where.clinicId = clinicId;
-        }
+        const where: any = { clinicId };
 
         if (role && role !== 'ALL') {
             where.role = role;
@@ -58,32 +54,20 @@ export async function GET(req: NextRequest) {
             prisma.staff.count({ where }),
         ]);
 
-        // Summary stats
-        const statsWhere: any = {};
-        if (clinicId) statsWhere.clinicId = clinicId;
-
         const stats = await prisma.staff.groupBy({
             by: ['status'],
-            where: statsWhere,
+            where: { clinicId },
             _count: true,
         });
-
-        const roleStatsWhere: any = { status: 'ACTIVE' };
-        if (clinicId) roleStatsWhere.clinicId = clinicId;
 
         const roleStats = await prisma.staff.groupBy({
             by: ['role'],
-            where: roleStatsWhere,
+            where: { clinicId, status: 'ACTIVE' },
             _count: true,
         });
 
-        const totalSalaryWhere: any = {
-            status: 'ACTIVE',
-        };
-        if (clinicId) totalSalaryWhere.clinicId = clinicId;
-
         const totalSalary = await prisma.staff.aggregate({
-            where: totalSalaryWhere,
+            where: { clinicId, status: 'ACTIVE' },
             _sum: {
                 basicSalary: true,
                 allowances: true,
@@ -162,67 +146,89 @@ export async function POST(req: NextRequest) {
             clinicId,
         } = body;
 
-        // Validate required fields
-        if (!firstName || !lastName || !email || !phone || !role || !joiningDate || !basicSalary) {
+        // ✅ FIXED: Validate all required fields with clear error messages
+        const missingFields = [];
+        if (!firstName) missingFields.push('firstName');
+        if (!lastName) missingFields.push('lastName');
+        if (!email) missingFields.push('email');
+        if (!phone) missingFields.push('phone');
+        if (!role) missingFields.push('role');
+        if (!joiningDate) missingFields.push('joiningDate');
+        if (basicSalary === undefined || basicSalary === null || basicSalary === '') missingFields.push('basicSalary');
+
+        if (missingFields.length > 0) {
             return NextResponse.json(
-                { error: 'Missing required fields' },
+                { error: `Missing required fields: ${missingFields.join(', ')}` },
                 { status: 400 }
             );
         }
 
-        if (!clinicId) {
+        // ✅ FIXED: If canLogin is true, password is required
+        if (canLogin && (!userPassword || userPassword.length < 6)) {
             return NextResponse.json(
-                { error: 'Clinic ID is required' },
+                { error: 'Password must be at least 6 characters when login is enabled' },
                 { status: 400 }
             );
         }
 
-        // Check if email already exists
-        const existingEmail = await prisma.staff.findFirst({
-            where: {
-                email,
-                clinicId,
-            },
+        // ✅ FIXED: Use a safe clinicId fallback
+        const resolvedClinicId = clinicId || 'default-clinic';
+
+        const existingStaffEmail = await prisma.staff.findFirst({
+            where: { email: email.toLowerCase().trim(), clinicId: resolvedClinicId },
         });
 
-        if (existingEmail) {
+        if (existingStaffEmail) {
             return NextResponse.json(
-                { error: 'Email already exists' },
+                { error: 'A staff member with this email already exists' },
                 { status: 400 }
             );
         }
 
-        // Generate employee ID
         const lastStaff = await prisma.staff.findFirst({
-            where: { clinicId },
+            where: { clinicId: resolvedClinicId },
             orderBy: { createdAt: 'desc' },
             select: { employeeId: true },
         });
 
         const employeeId = generateEmployeeId(lastStaff?.employeeId, role);
 
-        // Create user account if canLogin is true
+        // ✅ FIXED: Properly create user with hashed password when canLogin is true
         let userId = null;
         if (canLogin && userPassword) {
-            const hashedPassword = await bcrypt.hash(userPassword, 10);
+            const normalizedEmail = email.toLowerCase().trim();
 
-            const user = await prisma.user.create({
-                data: {
-                    email,
-                    name: `${firstName} ${lastName}`,
-                },
+            const existingUser = await prisma.user.findUnique({
+                where: { email: normalizedEmail }
             });
 
-            userId = user.id;
+            if (existingUser) {
+                // Link to existing user account
+                userId = existingUser.id;
+            } else {
+                // ✅ FIXED: Hash password before storing
+                const hashedPassword = await bcrypt.hash(userPassword, 10);
+                const userRole = role === 'DOCTOR' ? 'DOCTOR' : 'STAFF';
+
+                const user = await prisma.user.create({
+                    data: {
+                        email: normalizedEmail,
+                        name: `${firstName} ${lastName}`.trim(),
+                        password: hashedPassword,  // ✅ was missing before
+                        role: userRole,
+                        isActive: true,
+                    },
+                });
+                userId = user.id;
+            }
         }
 
-        // Create staff member
         const staff = await prisma.staff.create({
             data: {
                 employeeId,
                 firstName,
                 lastName,
-                email,
+                email: email.toLowerCase().trim(),
                 phone,
                 alternatePhone,
                 dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
@@ -245,21 +251,21 @@ export async function POST(req: NextRequest) {
                 employmentType,
                 qualification,
                 specialization,
-                experienceYears: experienceYears || 0,
+                experienceYears: parseInt(experienceYears?.toString()) || 0,
                 licenseNumber,
                 licenseExpiry: licenseExpiry ? new Date(licenseExpiry) : null,
-                basicSalary,
-                allowances: allowances || 0,
-                hra: hra || 0,
-                otherAllowances: otherAllowances || 0,
+                basicSalary: parseFloat(basicSalary?.toString()) || 0,
+                allowances: parseFloat(allowances?.toString()) || 0,
+                hra: parseFloat(hra?.toString()) || 0,
+                otherAllowances: parseFloat(otherAllowances?.toString()) || 0,
                 bankName,
                 accountNumber,
                 ifscCode,
                 accountHolderName,
                 userId,
-                canLogin,
+                canLogin: canLogin && !!userId,
                 status: 'ACTIVE',
-                clinicId,
+                clinicId: resolvedClinicId,
             },
             include: {
                 user: {
@@ -272,24 +278,83 @@ export async function POST(req: NextRequest) {
             },
         });
 
-        // Initialize leave balance for the current year
+        // Create initial leave balance for current year
         const currentYear = new Date().getFullYear();
         await prisma.leaveBalance.create({
             data: {
                 staffId: staff.id,
                 year: currentYear,
-                clinicId,
+                clinicId: resolvedClinicId,
             },
         });
 
         return NextResponse.json({ staff }, { status: 201 });
     } catch (error) {
         console.error('Error creating staff:', error);
-        return NextResponse.json({ error: 'Failed to create staff member' }, { status: 500 });
+        return NextResponse.json({
+            error: 'Failed to create staff member',
+            details: error instanceof Error ? error.message : 'Unknown error'
+        }, { status: 500 });
     }
 }
 
-// Helper functions
+// DELETE - Remove staff member
+export async function DELETE(req: NextRequest) {
+    try {
+        const { searchParams } = new URL(req.url);
+        const id = searchParams.get('id');
+
+        if (!id) {
+            return NextResponse.json(
+                { error: 'Staff ID is required' },
+                { status: 400 }
+            );
+        }
+
+        const staff = await prisma.staff.findUnique({
+            where: { id },
+            include: { user: true }
+        });
+
+        if (!staff) {
+            return NextResponse.json(
+                { error: 'Staff not found' },
+                { status: 404 }
+            );
+        }
+
+        // Delete related records first
+        await prisma.staffAttendance.deleteMany({ where: { staffId: id } });
+        await prisma.staffLeave.deleteMany({ where: { staffId: id } });
+        await prisma.leaveBalance.deleteMany({ where: { staffId: id } });
+        await prisma.payroll.deleteMany({ where: { staffId: id } });
+        await prisma.staffPerformance.deleteMany({ where: { staffId: id } });
+        await prisma.staffDocument.deleteMany({ where: { staffId: id } });
+
+        await prisma.staff.delete({ where: { id } });
+
+        if (staff.userId) {
+            const userStaffCount = await prisma.staff.count({
+                where: { userId: staff.userId }
+            });
+
+            if (userStaffCount === 0) {
+                await prisma.user.delete({ where: { id: staff.userId } });
+            }
+        }
+
+        return NextResponse.json({
+            message: 'Staff deleted successfully'
+        });
+    } catch (error) {
+        console.error('Error deleting staff:', error);
+        return NextResponse.json(
+            { error: 'Failed to delete staff' },
+            { status: 500 }
+        );
+    }
+}
+
 function generateEmployeeId(lastEmployeeId?: string, role?: string): string {
     const rolePrefix: Record<string, string> = {
         DOCTOR: 'DOC',

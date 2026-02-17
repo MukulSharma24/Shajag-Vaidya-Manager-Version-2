@@ -1,6 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
+// Helper: always resolve a valid clinicId without requiring it from the frontend
+async function resolveClinicId(providedClinicId?: string): Promise<string | null> {
+    if (providedClinicId) return providedClinicId;
+
+    try {
+        const clinic = await prisma.clinic.findFirst({ select: { id: true } });
+        return clinic?.id ?? null;
+    } catch {
+        return null;
+    }
+}
+
 // GET - Fetch all expenses
 export async function GET(req: NextRequest) {
     try {
@@ -32,68 +44,30 @@ export async function GET(req: NextRequest) {
             prisma.expense.findMany({
                 where,
                 include: {
-                    addedByUser: {
-                        select: {
-                            id: true,
-                            name: true,
-                        },
-                    },
-                    approvedByUser: {
-                        select: {
-                            id: true,
-                            name: true,
-                        },
-                    },
+                    addedByUser: { select: { id: true, name: true } },
+                    approvedByUser: { select: { id: true, name: true } },
                 },
-                orderBy: {
-                    expenseDate: 'desc',
-                },
+                orderBy: { expenseDate: 'desc' },
                 skip: (page - 1) * limit,
                 take: limit,
             }),
             prisma.expense.count({ where }),
         ]);
 
-        // Summary stats
-        const stats = await prisma.expense.aggregate({
-            where: {},
-            _sum: {
-                amount: true,
-            },
-            _count: true,
-        });
-
-        const paidStats = await prisma.expense.aggregate({
-            where: {
-                paymentStatus: 'PAID',
-            },
-            _sum: {
-                amount: true,
-            },
-        });
-
-        const pendingStats = await prisma.expense.aggregate({
-            where: {
-                paymentStatus: 'PENDING',
-            },
-            _sum: {
-                amount: true,
-            },
-        });
+        const [allStats, paidStats, pendingStats] = await Promise.all([
+            prisma.expense.aggregate({ where: {}, _sum: { amount: true }, _count: true }),
+            prisma.expense.aggregate({ where: { paymentStatus: 'PAID' }, _sum: { amount: true } }),
+            prisma.expense.aggregate({ where: { paymentStatus: 'PENDING' }, _sum: { amount: true } }),
+        ]);
 
         return NextResponse.json({
             expenses,
-            pagination: {
-                total,
-                page,
-                limit,
-                pages: Math.ceil(total / limit),
-            },
+            pagination: { total, page, limit, pages: Math.ceil(total / limit) },
             stats: {
-                totalExpenses: stats._count,
-                totalAmount: stats._sum.amount || 0,
-                paidAmount: paidStats._sum.amount || 0,
-                pendingAmount: pendingStats._sum.amount || 0,
+                totalExpenses: allStats._count,
+                totalAmount: Number(allStats._sum.amount || 0),
+                paidAmount: Number(paidStats._sum.amount || 0),
+                pendingAmount: Number(pendingStats._sum.amount || 0),
             },
         });
     } catch (error) {
@@ -116,8 +90,8 @@ export async function POST(req: NextRequest) {
             expenseDate,
             paymentStatus = 'PAID',
             receiptUrl,
-            clinicId, // You'll need to pass this from the frontend now
-            addedBy, // You'll need to pass userId from the frontend
+            clinicId: providedClinicId,
+            addedBy,
         } = body;
 
         // Validate required fields
@@ -128,6 +102,16 @@ export async function POST(req: NextRequest) {
             );
         }
 
+        if (isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
+            return NextResponse.json(
+                { error: 'Amount must be a positive number' },
+                { status: 400 }
+            );
+        }
+
+        // Auto-resolve clinicId — don't require frontend to send it
+        const clinicId = await resolveClinicId(providedClinicId);
+
         // Generate expense number
         const lastExpense = await prisma.expense.findFirst({
             where: clinicId ? { clinicId } : {},
@@ -137,47 +121,55 @@ export async function POST(req: NextRequest) {
 
         const expenseNumber = generateExpenseNumber(lastExpense?.expenseNumber);
 
-        // Build expense data
+        // Build expense data — only include optional fields if they have values
         const expenseData: any = {
             expenseNumber,
             category,
-            subcategory,
-            amount,
-            description,
-            vendorName,
-            paymentMethod,
+            amount: parseFloat(amount),
             expenseDate: new Date(expenseDate),
             paymentStatus,
-            receiptUrl,
         };
 
-        // Add optional fields if provided
+        // Add optional string fields only if non-empty
+        if (subcategory?.trim()) expenseData.subcategory = subcategory.trim();
+        if (description?.trim()) expenseData.description = description.trim();
+        if (vendorName?.trim()) expenseData.vendorName = vendorName.trim();
+        if (paymentMethod) expenseData.paymentMethod = paymentMethod;
+        if (receiptUrl?.trim()) expenseData.receiptUrl = receiptUrl.trim();
+
+        // Only include DB relations if IDs are valid
         if (clinicId) expenseData.clinicId = clinicId;
         if (addedBy) {
             expenseData.addedBy = addedBy;
-            expenseData.approvedBy = addedBy; // Auto-approve for now
+            expenseData.approvedBy = addedBy;
         }
+
+        console.log('Creating expense:', expenseNumber, category, amount, expenseDate);
 
         const expense = await prisma.expense.create({
             data: expenseData,
             include: {
-                addedByUser: {
-                    select: {
-                        id: true,
-                        name: true,
-                    },
-                },
+                addedByUser: { select: { id: true, name: true } },
             },
         });
 
+        console.log('Expense created:', expense.id);
+
         return NextResponse.json({ expense }, { status: 201 });
-    } catch (error) {
+    } catch (error: any) {
         console.error('Error creating expense:', error);
-        return NextResponse.json({ error: 'Failed to create expense' }, { status: 500 });
+
+        // Return the actual Prisma error so we can debug from the UI
+        return NextResponse.json(
+            {
+                error: 'Failed to create expense',
+                details: error?.message ?? 'Unknown error',
+            },
+            { status: 500 }
+        );
     }
 }
 
-// Helper function
 function generateExpenseNumber(lastExpenseNumber?: string): string {
     const prefix = 'EXP';
     const date = new Date();

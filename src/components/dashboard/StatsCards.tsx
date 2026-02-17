@@ -6,12 +6,8 @@ import { useRouter } from 'next/navigation';
 interface StatCardData {
     id: string;
     icon: React.ReactNode;
-    count: number | string;
+    count: number | string | null; // null = hidden for this role
     label: string;
-    trend?: {
-        value: number;
-        isPositive: boolean;
-    };
     gradientFrom: string;
     gradientTo: string;
     iconBg: string;
@@ -53,100 +49,88 @@ const Icons = {
     ),
 };
 
+// Card definitions — count starts as 0, gets replaced by API
+// null count = hidden (set by API for restricted roles)
+const CARD_DEFINITIONS: Omit<StatCardData, 'count'>[] = [
+    {
+        id: 'totalPatients',
+        icon: <Icons.Users />,
+        label: 'Total Patients',
+        gradientFrom: 'from-blue-500',
+        gradientTo: 'to-blue-600',
+        iconBg: 'bg-blue-500',
+        clickable: true,
+        route: '/dashboard/patients',
+    },
+    {
+        id: 'todayAppointments',
+        icon: <Icons.Calendar />,
+        label: "Today's Appointments",
+        gradientFrom: 'from-purple-500',
+        gradientTo: 'to-purple-600',
+        iconBg: 'bg-purple-500',
+        clickable: true,
+        route: '/dashboard/appointments',
+    },
+    {
+        id: 'medicinesStock',
+        icon: <Icons.Medicine />,
+        label: 'Medicines in Stock',
+        gradientFrom: 'from-green-500',
+        gradientTo: 'to-green-600',
+        iconBg: 'bg-green-500',
+        clickable: true,
+        route: '/dashboard/pharmacy',
+    },
+    {
+        id: 'therapyAssignments',
+        icon: <Icons.Therapy />,
+        label: 'Active Therapy Plans',
+        gradientFrom: 'from-orange-500',
+        gradientTo: 'to-orange-600',
+        iconBg: 'bg-orange-500',
+        clickable: true,
+        route: '/dashboard/therapy',
+    },
+    {
+        id: 'totalStaff',
+        icon: <Icons.Staff />,
+        label: 'Present Today',          // Changed from "Total Staff"
+        gradientFrom: 'from-indigo-500',
+        gradientTo: 'to-indigo-600',
+        iconBg: 'bg-indigo-500',
+        clickable: true,
+        route: '/dashboard/staff',
+    },
+    {
+        id: 'totalRevenue',
+        icon: <Icons.Revenue />,
+        label: 'Revenue This Month',     // More accurate label
+        gradientFrom: 'from-emerald-500',
+        gradientTo: 'to-emerald-600',
+        iconBg: 'bg-emerald-500',
+        clickable: true,
+        route: '/dashboard/billing',
+    },
+];
+
 export default function StatsCards() {
     const router = useRouter();
-    const [stats, setStats] = useState<StatCardData[]>([
-        {
-            id: 'totalPatients',
-            icon: <Icons.Users />,
-            count: 0,
-            label: 'Total Patients',
-            gradientFrom: 'from-blue-500',
-            gradientTo: 'to-blue-600',
-            iconBg: 'bg-blue-500',
-            clickable: true,
-            route: '/dashboard/patients'
-        },
-        {
-            id: 'todayAppointments',
-            icon: <Icons.Calendar />,
-            count: 0,
-            label: "Today's Appointments",
-            gradientFrom: 'from-purple-500',
-            gradientTo: 'to-purple-600',
-            iconBg: 'bg-purple-500',
-            clickable: true,
-            route: '/dashboard/appointments'
-        },
-        {
-            id: 'medicinesStock',
-            icon: <Icons.Medicine />,
-            count: 0,
-            label: 'Medicines in Stock',
-            gradientFrom: 'from-green-500',
-            gradientTo: 'to-green-600',
-            iconBg: 'bg-green-500',
-            clickable: true,
-            route: '/dashboard/pharmacy'
-        },
-        {
-            id: 'therapyAssignments',
-            icon: <Icons.Therapy />,
-            count: 0,
-            label: 'Therapy Assignments',
-            gradientFrom: 'from-orange-500',
-            gradientTo: 'to-orange-600',
-            iconBg: 'bg-orange-500',
-            clickable: true,
-            route: '/dashboard/therapy'
-        },
-        {
-            id: 'totalStaff',
-            icon: <Icons.Staff />,
-            count: 0,
-            label: 'Total Staff',
-            gradientFrom: 'from-indigo-500',
-            gradientTo: 'to-indigo-600',
-            iconBg: 'bg-indigo-500',
-            clickable: true,
-            route: '/dashboard/staff'
-        },
-        {
-            id: 'totalRevenue',
-            icon: <Icons.Revenue />,
-            count: '₹0',
-            label: 'Total Revenue',
-            gradientFrom: 'from-emerald-500',
-            gradientTo: 'to-emerald-600',
-            iconBg: 'bg-emerald-500',
-            clickable: true,
-            route: '/dashboard/billing'
-        }
-    ]);
-
+    const [stats, setStats] = useState<Record<string, number | string | null>>({});
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        loadStatsRealtime();
-
-        // Refresh stats every 30 seconds for real-time updates
-        const interval = setInterval(() => {
-            loadStatsRealtime();
-        }, 30000);
-
+        loadStats();
+        const interval = setInterval(loadStats, 30000);
         return () => clearInterval(interval);
     }, []);
 
-    const loadStatsRealtime = async () => {
+    const loadStats = async () => {
         try {
-            // Fetch real-time data from your API
-            const response = await fetch('/api/dashboard/stats');
-
-            if (response.ok) {
-                const data = await response.json();
-                updateStats(data);
-            } else {
-                console.error('Failed to fetch stats');
+            const res = await fetch('/api/dashboard/stats');
+            if (res.ok) {
+                const data = await res.json();
+                setStats(data);
             }
         } catch (error) {
             console.error('Error loading stats:', error);
@@ -155,81 +139,70 @@ export default function StatsCards() {
         }
     };
 
-    const updateStats = (data: any) => {
-        setStats(prevStats =>
-            prevStats.map(stat => ({
-                ...stat,
-                count: data[stat.id] || 0
-            }))
-        );
-    };
+    // Only render cards where the API returned a non-null value
+    const visibleCards = CARD_DEFINITIONS.filter(card => {
+        // During loading show all as skeleton
+        if (loading) return true;
+        // null means "hidden for this role"
+        return stats[card.id] !== null && stats[card.id] !== undefined;
+    });
 
-    const handleCardClick = (stat: StatCardData) => {
-        if (stat.clickable && stat.route) {
-            router.push(stat.route);
-        }
+    const getCount = (id: string): number | string => {
+        const val = stats[id];
+        if (val === null || val === undefined) return 0;
+        return val;
     };
 
     if (loading) {
         return (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-5 mb-8">
-                {[...Array(6)].map((_, index) => (
-                    <div key={index} className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 animate-pulse">
-                        <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                                <div className="w-12 h-12 bg-gray-200 rounded-lg mb-3"></div>
-                                <div className="h-6 bg-gray-200 rounded w-12 mb-2"></div>
-                                <div className="h-3 bg-gray-200 rounded w-20"></div>
-                            </div>
-                        </div>
+                {[...Array(6)].map((_, i) => (
+                    <div key={i} className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 animate-pulse">
+                        <div className="w-12 h-12 bg-gray-200 rounded-lg mb-3" />
+                        <div className="h-6 bg-gray-200 rounded w-12 mb-2" />
+                        <div className="h-3 bg-gray-200 rounded w-20" />
                     </div>
                 ))}
             </div>
         );
     }
 
+    // Dynamic grid cols based on how many cards are visible
+    const gridCols =
+        visibleCards.length <= 2 ? 'xl:grid-cols-2' :
+            visibleCards.length === 3 ? 'xl:grid-cols-3' :
+                visibleCards.length === 4 ? 'xl:grid-cols-4' :
+                    visibleCards.length === 5 ? 'xl:grid-cols-5' :
+                        'xl:grid-cols-6';
+
     return (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-5 mb-8">
-            {stats.map((stat) => (
+        <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 ${gridCols} gap-5 mb-8`}>
+            {visibleCards.map((card) => (
                 <div
-                    key={stat.id}
-                    onClick={() => handleCardClick(stat)}
+                    key={card.id}
+                    onClick={() => card.clickable && card.route && router.push(card.route)}
                     className={`
                         group relative bg-white rounded-xl shadow-sm border border-gray-100 p-5
                         transition-all duration-300 overflow-hidden
-                        ${stat.clickable ? 'cursor-pointer hover:shadow-lg hover:-translate-y-1 hover:border-transparent' : ''}
+                        ${card.clickable ? 'cursor-pointer hover:shadow-lg hover:-translate-y-1 hover:border-transparent' : ''}
                     `}
                 >
-                    {/* Gradient Background on Hover */}
-                    <div className={`
-                        absolute inset-0 bg-gradient-to-br ${stat.gradientFrom} ${stat.gradientTo} 
-                        opacity-0 group-hover:opacity-5 transition-opacity duration-300
-                    `}></div>
+                    {/* Gradient overlay on hover */}
+                    <div className={`absolute inset-0 bg-gradient-to-br ${card.gradientFrom} ${card.gradientTo} opacity-0 group-hover:opacity-5 transition-opacity duration-300`} />
 
-                    {/* Content */}
                     <div className="relative">
                         <div className="flex items-start justify-between mb-3">
-                            {/* Icon - Made darker by changing opacity from 10 to 20 */}
-                            <div className={`
-                                flex items-center justify-center w-12 h-12 rounded-lg
-                                ${stat.iconBg} bg-opacity-20 text-white
-                                group-hover:scale-105 transition-transform duration-300
-                            `}>
-                                <div className={`${stat.iconBg.replace('bg-', 'text-')}`}>
-                                    {stat.icon}
+                            <div className={`flex items-center justify-center w-12 h-12 rounded-lg ${card.iconBg} bg-opacity-20 group-hover:scale-105 transition-transform duration-300`}>
+                                <div className={`${card.iconBg.replace('bg-', 'text-')}`}>
+                                    {card.icon}
                                 </div>
                             </div>
                         </div>
 
-                        {/* Count */}
                         <h3 className="text-2xl font-bold text-gray-900 mb-1">
-                            {stat.count}
+                            {getCount(card.id)}
                         </h3>
-
-                        {/* Label */}
-                        <p className="text-xs text-gray-600 font-medium">
-                            {stat.label}
-                        </p>
+                        <p className="text-xs text-gray-600 font-medium">{card.label}</p>
                     </div>
                 </div>
             ))}

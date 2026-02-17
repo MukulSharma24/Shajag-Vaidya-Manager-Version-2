@@ -51,9 +51,14 @@ export async function GET(req: NextRequest) {
         // Calculate stats for each plan
         const plansWithStats = plans.map(plan => {
             const completedSessions = plan.sessions.filter(s => s.status === 'COMPLETED').length;
-            const upcomingSessions = plan.sessions.filter(s =>
-                s.status === 'SCHEDULED' && new Date(s.scheduledDate) >= new Date()
-            );
+            // FIX: Compare only date portion so today's sessions are always included in upcoming
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const upcomingSessions = plan.sessions.filter(s => {
+                const sessionDate = new Date(s.scheduledDate);
+                sessionDate.setHours(0, 0, 0, 0);
+                return s.status === 'SCHEDULED' && sessionDate >= today;
+            });
             const nextSession = upcomingSessions[0] || null;
 
             return {
@@ -90,7 +95,7 @@ export async function POST(req: NextRequest) {
             pricePerSession,
             notes,
             instructions,
-            sessionTimes, // Array of times for flexible scheduling
+            sessionTimes,
         } = body;
 
         // Validation
@@ -169,7 +174,7 @@ export async function POST(req: NextRequest) {
             },
         });
 
-        // Generate sessions
+        // Generate sessions starting from session #1 on the start date
         await generateSessions(
             therapyPlan.id,
             therapyTypes,
@@ -221,6 +226,7 @@ function generatePlanNumber(lastPlanNumber?: string): string {
 }
 
 // Helper: Generate sessions
+// Sessions are numbered starting from 1 and the FIRST session is always on startDate
 async function generateSessions(
     planId: string,
     therapyTypes: string[],
@@ -229,28 +235,33 @@ async function generateSessions(
     frequency: string,
     sessionTimes?: string[]
 ) {
-    const sessions = [];
+    // Use a single global counter across all therapy types so session numbers are unique and sequential
     let sessionNumber = 1;
 
     for (const therapyType of therapyTypes) {
+        // Always start from the exact startDate — session #1 is on day 1
         let currentDate = new Date(startDate);
 
         for (let i = 0; i < sessionsPerTherapy; i++) {
-            // Get time for this session (flexible or default)
-            const time = sessionTimes && sessionTimes[i % sessionTimes.length]
-                ? sessionTimes[i % sessionTimes.length]
-                : '10:00 AM';
+            const time =
+                sessionTimes && sessionTimes.length > 0
+                    ? sessionTimes[i % sessionTimes.length]
+                    : '10:00 AM';
 
-            sessions.push({
-                planId,
-                sessionNumber: sessionNumber++,
-                therapyType,
-                scheduledDate: new Date(currentDate),
-                scheduledTime: time,
-                status: 'SCHEDULED',
+            await prisma.therapySession.create({
+                data: {
+                    planId,
+                    sessionNumber,        // Starts at 1
+                    therapyType,
+                    scheduledDate: new Date(currentDate),
+                    scheduledTime: time,
+                    status: 'SCHEDULED',
+                },
             });
 
-            // Calculate next date based on frequency
+            sessionNumber++;
+
+            // Advance date AFTER creating the session so day 1 = startDate
             switch (frequency) {
                 case 'DAILY':
                     currentDate.setDate(currentDate.getDate() + 1);
@@ -266,8 +277,4 @@ async function generateSessions(
             }
         }
     }
-
-    await prisma.therapySession.createMany({
-        data: sessions,
-    });
 }

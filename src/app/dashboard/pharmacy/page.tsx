@@ -100,6 +100,16 @@ export default function PharmacyPage() {
         }
     };
 
+    // ✅ Helper to check if medicine expires in 30 days
+    const isExpiringIn30Days = (expiryDate?: string) => {
+        if (!expiryDate) return false;
+        const expiry = new Date(expiryDate);
+        const today = new Date();
+        const in30Days = new Date();
+        in30Days.setDate(today.getDate() + 30);
+        return expiry >= today && expiry <= in30Days;
+    };
+
     const filteredMedicines = Array.isArray(medicines)
         ? medicines.filter((med) => {
             const matchesSearch = searchQuery
@@ -120,6 +130,9 @@ export default function PharmacyPage() {
                 matchesStock = med.currentStock === 0;
             } else if (stockFilter === 'in') {
                 matchesStock = med.currentStock > med.reorderLevel;
+            } else if (stockFilter === 'expiring') {
+                // ✅ NEW: Filter expiring medicines
+                matchesStock = isExpiringIn30Days(med.expiryDate);
             }
 
             return matchesSearch && matchesType && matchesStock && matchesCategory;
@@ -140,6 +153,7 @@ export default function PharmacyPage() {
         inStock: Array.isArray(medicines) ? medicines.filter(m => m.currentStock > m.reorderLevel).length : 0,
         lowStock: Array.isArray(medicines) ? medicines.filter(m => m.currentStock > 0 && m.currentStock <= m.reorderLevel).length : 0,
         outOfStock: Array.isArray(medicines) ? medicines.filter(m => m.currentStock === 0).length : 0,
+        expiring: Array.isArray(medicines) ? medicines.filter(m => isExpiringIn30Days(m.expiryDate)).length : 0, // ✅ NEW
     };
 
     const medicineTypes = ['Tablet', 'Syrup', 'Capsule', 'Injection', 'Ointment', 'Drops', 'Inhaler'];
@@ -175,17 +189,17 @@ export default function PharmacyPage() {
                     </div>
                 </div>
 
-                {/* Stats Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                {/* Stats Cards - ✅ NOW 5 COLUMNS */}
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-6">
                     <div className="card">
                         <div className="card-content">
                             <div className="flex items-center justify-between">
                                 <div>
-                                    <p className="text-sm text-gray-500 mb-1">Total Medicines</p>
-                                    <p className="text-2xl font-semibold text-gray-900">{stats.total}</p>
+                                    <p className="text-xs text-gray-500 mb-1">Total Medicines</p>
+                                    <p className="text-xl font-semibold text-gray-900">{stats.total}</p>
                                 </div>
-                                <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                                    <svg className="w-6 h-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                                    <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                                     </svg>
                                 </div>
@@ -197,11 +211,11 @@ export default function PharmacyPage() {
                         <div className="card-content">
                             <div className="flex items-center justify-between">
                                 <div>
-                                    <p className="text-sm text-gray-500 mb-1">In Stock</p>
-                                    <p className="text-2xl font-semibold text-green-600">{stats.inStock}</p>
+                                    <p className="text-xs text-gray-500 mb-1">In Stock</p>
+                                    <p className="text-xl font-semibold text-green-600">{stats.inStock}</p>
                                 </div>
-                                <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-                                    <svg className="w-6 h-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                                    <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                                     </svg>
                                 </div>
@@ -213,11 +227,11 @@ export default function PharmacyPage() {
                         <div className="card-content">
                             <div className="flex items-center justify-between">
                                 <div>
-                                    <p className="text-sm text-gray-500 mb-1">Low Stock</p>
-                                    <p className="text-2xl font-semibold text-amber-600">{stats.lowStock}</p>
+                                    <p className="text-xs text-gray-500 mb-1">Low Stock</p>
+                                    <p className="text-xl font-semibold text-amber-600">{stats.lowStock}</p>
                                 </div>
-                                <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center">
-                                    <svg className="w-6 h-6 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center">
+                                    <svg className="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                                     </svg>
                                 </div>
@@ -229,12 +243,29 @@ export default function PharmacyPage() {
                         <div className="card-content">
                             <div className="flex items-center justify-between">
                                 <div>
-                                    <p className="text-sm text-gray-500 mb-1">Out of Stock</p>
-                                    <p className="text-2xl font-semibold text-red-600">{stats.outOfStock}</p>
+                                    <p className="text-xs text-gray-500 mb-1">Out of Stock</p>
+                                    <p className="text-xl font-semibold text-red-600">{stats.outOfStock}</p>
                                 </div>
-                                <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
-                                    <svg className="w-6 h-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
+                                    <svg className="w-5 h-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* ✅ NEW: Expiring in 30 Days Card */}
+                    <div className="card">
+                        <div className="card-content">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-xs text-gray-500 mb-1">Expiring (30d)</p>
+                                    <p className="text-xl font-semibold text-purple-600">{stats.expiring}</p>
+                                </div>
+                                <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                                    <svg className="w-5 h-5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                                     </svg>
                                 </div>
                             </div>
@@ -266,11 +297,13 @@ export default function PharmacyPage() {
                                 ))}
                             </select>
 
+                            {/* ✅ UPDATED: Added "Expiring in 30 Days" option */}
                             <select value={stockFilter} onChange={(e) => setStockFilter(e.target.value)} className="form-select">
                                 <option value="all">All Stock</option>
                                 <option value="in">In Stock</option>
                                 <option value="low">Low Stock</option>
                                 <option value="out">Out of Stock</option>
+                                <option value="expiring">Expiring in 30 Days</option>
                             </select>
 
                             <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="form-select">
@@ -319,10 +352,16 @@ export default function PharmacyPage() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                     </svg>
                     <h3 className="text-lg font-medium text-gray-900 mb-2">No medicines found</h3>
-                    <p className="text-sm text-gray-500 mb-6">Add your first medicine to get started</p>
-                    <button onClick={() => setShowAddMedicine(true)} className="btn btn-primary">
-                        Add Medicine
-                    </button>
+                    <p className="text-sm text-gray-500 mb-6">
+                        {stockFilter === 'expiring'
+                            ? 'No medicines expiring in the next 30 days'
+                            : 'Add your first medicine to get started'}
+                    </p>
+                    {stockFilter !== 'expiring' && (
+                        <button onClick={() => setShowAddMedicine(true)} className="btn btn-primary">
+                            Add Medicine
+                        </button>
+                    )}
                 </div>
             ) : (
                 <div className={viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4' : 'space-y-3'}>
@@ -341,6 +380,7 @@ export default function PharmacyPage() {
                                 setShowStockModal(true);
                             }}
                             getStockBadge={getStockBadge}
+                            isExpiring={isExpiringIn30Days(medicine.expiryDate)}
                         />
                     ))}
                 </div>
@@ -425,6 +465,7 @@ function MedicineCard({
                           onDelete,
                           onStock,
                           getStockBadge,
+                          isExpiring,
                       }: {
     medicine: Medicine;
     viewMode: 'grid' | 'list';
@@ -432,7 +473,15 @@ function MedicineCard({
     onDelete: (id: string) => void;
     onStock: (medicine: Medicine) => void;
     getStockBadge: (medicine: Medicine) => JSX.Element;
+    isExpiring: boolean; // ✅ NEW PROP
 }) {
+    // ✅ Helper to format expiry date
+    const formatExpiry = (date?: string) => {
+        if (!date) return null;
+        const d = new Date(date);
+        return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    };
+
     if (viewMode === 'list') {
         return (
             <div className="card card-hover">
@@ -442,6 +491,12 @@ function MedicineCard({
                             <div className="col-span-2">
                                 <h3 className="text-sm font-semibold text-gray-900">{medicine.name}</h3>
                                 <p className="text-xs text-gray-500">{medicine.genericName || 'N/A'}</p>
+                                {/* ✅ Show expiry warning */}
+                                {isExpiring && medicine.expiryDate && (
+                                    <p className="text-xs text-purple-600 font-medium mt-0.5">
+                                        ⏰ Expires: {formatExpiry(medicine.expiryDate)}
+                                    </p>
+                                )}
                             </div>
                             <div>
                                 <span className="badge bg-gray-100 text-gray-700 border-gray-200 text-xs">{medicine.type}</span>
@@ -489,6 +544,18 @@ function MedicineCard({
                     </div>
                     {getStockBadge(medicine)}
                 </div>
+
+                {/* ✅ Expiry warning badge */}
+                {isExpiring && medicine.expiryDate && (
+                    <div className="mb-3 p-2 bg-purple-50 border border-purple-200 rounded-lg">
+                        <p className="text-xs font-semibold text-purple-700 flex items-center gap-1">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            Expires: {formatExpiry(medicine.expiryDate)}
+                        </p>
+                    </div>
+                )}
 
                 <div className="space-y-2 mb-4 text-xs">
                     <div className="flex items-center justify-between">
@@ -550,6 +617,7 @@ function MedicineCard({
         </div>
     );
 }
+
 
 // Add Medicine Modal
 function AddMedicineModal({ categories, onClose, onSuccess, medicineTypes }: {

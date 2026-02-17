@@ -58,12 +58,40 @@ export default function DietPlanDetailsPage({ params }: { params: { id: string }
         }
     };
 
+    const editPlan = () => {
+        router.push(`/dashboard/diet/plans/${params.id}/edit`);
+    };
+
+    const deletePlan = async () => {
+        if (!confirm('Are you sure you want to delete this diet plan? This action cannot be undone.')) {
+            return;
+        }
+
+        try {
+            const res = await fetch(`/api/diet/plans/${params.id}`, {
+                method: 'DELETE',
+            });
+
+            if (res.ok) {
+                alert('Diet plan deleted successfully!');
+                router.push('/dashboard/diet');
+            } else {
+                alert('Failed to delete diet plan');
+            }
+        } catch (error) {
+            console.error('Error deleting plan:', error);
+            alert('Failed to delete diet plan');
+        }
+    };
+
     const archivePlan = async () => {
         if (!confirm('Archive this diet plan?')) return;
 
         try {
             const res = await fetch(`/api/diet/plans/${params.id}`, {
-                method: 'DELETE',
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: 'ARCHIVED' }),
             });
 
             if (res.ok) {
@@ -158,10 +186,22 @@ export default function DietPlanDetailsPage({ params }: { params: { id: string }
                         </div>
                         <div className="flex gap-3">
                             <button
-                                onClick={archivePlan}
-                                className="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg font-medium transition-colors"
+                                onClick={editPlan}
+                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
                             >
-                                Archive
+                                ✏️ Edit
+                            </button>
+                            <button
+                                onClick={deletePlan}
+                                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors"
+                            >
+                                ️ Delete
+                            </button>
+                            <button
+                                onClick={archivePlan}
+                                className="px-4 py-2 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg font-medium transition-colors"
+                            >
+                                 Archive
                             </button>
                             <button
                                 onClick={() => window.print()}

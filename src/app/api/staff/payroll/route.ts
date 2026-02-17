@@ -9,13 +9,10 @@ export async function GET(req: NextRequest) {
         const month = searchParams.get('month');
         const year = searchParams.get('year');
         const status = searchParams.get('status');
-        const clinicId = searchParams.get('clinicId'); // Pass from frontend
 
-        const where: any = {};
-
-        if (clinicId) {
-            where.clinicId = clinicId;
-        }
+        const where: any = {
+            clinicId: 'default-clinic', // ✅ Always filter by clinic
+        };
 
         if (staffId) where.staffId = staffId;
         if (month) where.month = parseInt(month);
@@ -54,11 +51,8 @@ export async function GET(req: NextRequest) {
         });
 
         // Summary stats
-        const statsWhere: any = {};
-        if (clinicId) statsWhere.clinicId = clinicId;
-
         const stats = await prisma.payroll.aggregate({
-            where: statsWhere,
+            where: { clinicId: 'default-clinic' },
             _sum: {
                 grossSalary: true,
                 netSalary: true,
@@ -67,13 +61,11 @@ export async function GET(req: NextRequest) {
             _count: true,
         });
 
-        const pendingStatsWhere: any = {
-            paymentStatus: 'PENDING',
-        };
-        if (clinicId) pendingStatsWhere.clinicId = clinicId;
-
         const pendingStats = await prisma.payroll.aggregate({
-            where: pendingStatsWhere,
+            where: {
+                clinicId: 'default-clinic',
+                paymentStatus: 'PENDING',
+            },
             _sum: {
                 netSalary: true,
             },
@@ -97,7 +89,7 @@ export async function GET(req: NextRequest) {
     }
 }
 
-// POST - Generate payroll for staff (manual calculation by owner)
+// POST - Generate payroll for staff
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
@@ -108,14 +100,8 @@ export async function POST(req: NextRequest) {
             daysPresent,
             daysAbsent,
             totalWorkingDays,
-            basicSalary,
-            allowances,
-            hra,
-            otherAllowances,
             otherDeductions,
             notes,
-            clinicId, // Pass from frontend
-            generatedBy, // Pass userId from frontend
         } = body;
 
         if (!staffId || !month || !year) {
@@ -126,15 +112,13 @@ export async function POST(req: NextRequest) {
         }
 
         // Check if payroll already exists
-        const existingWhere: any = {
-            staffId,
-            month,
-            year,
-        };
-        if (clinicId) existingWhere.clinicId = clinicId;
-
         const existing = await prisma.payroll.findFirst({
-            where: existingWhere,
+            where: {
+                staffId,
+                month,
+                year,
+                clinicId: 'default-clinic', // ✅ Include clinic in check
+            },
         });
 
         if (existing) {
@@ -144,49 +128,39 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // Fetch staff details if not provided
-        let staffData = null;
-        if (!basicSalary) {
-            staffData = await prisma.staff.findUnique({
-                where: { id: staffId },
-                select: {
-                    basicSalary: true,
-                    allowances: true,
-                    hra: true,
-                    otherAllowances: true,
-                },
-            });
+        // Fetch staff details
+        const staffData = await prisma.staff.findUnique({
+            where: { id: staffId },
+            select: {
+                basicSalary: true,
+                allowances: true,
+                hra: true,
+                otherAllowances: true,
+            },
+        });
 
-            if (!staffData) {
-                return NextResponse.json({ error: 'Staff not found' }, { status: 404 });
-            }
+        if (!staffData) {
+            return NextResponse.json({ error: 'Staff not found' }, { status: 404 });
         }
 
-        // Use provided values or fetch from staff
-        const salary = basicSalary || Number(staffData?.basicSalary || 0);
-        const allowancesAmt = allowances || Number(staffData?.allowances || 0);
-        const hraAmt = hra || Number(staffData?.hra || 0);
-        const otherAllowancesAmt = otherAllowances || Number(staffData?.otherAllowances || 0);
+        // Calculate salary components
+        const salary = Number(staffData.basicSalary || 0);
+        const allowancesAmt = Number(staffData.allowances || 0);
+        const hraAmt = Number(staffData.hra || 0);
+        const otherAllowancesAmt = Number(staffData.otherAllowances || 0);
 
-        // Calculate gross salary
         const grossSalary = salary + allowancesAmt + hraAmt + otherAllowancesAmt;
 
-        // Calculate absence deduction
+        // Calculate deductions
         const perDaySalary = grossSalary / (totalWorkingDays || 30);
         const absenceDeduction = perDaySalary * (daysAbsent || 0);
-
-        // Total deductions
         const totalDeductions = absenceDeduction + (otherDeductions || 0);
 
-        // Net salary
         const netSalary = grossSalary - totalDeductions;
 
         // Generate payroll number
-        const lastPayrollWhere: any = {};
-        if (clinicId) lastPayrollWhere.clinicId = clinicId;
-
         const lastPayroll = await prisma.payroll.findFirst({
-            where: lastPayrollWhere,
+            where: { clinicId: 'default-clinic' },
             orderBy: { createdAt: 'desc' },
             select: { payrollNumber: true },
         });
@@ -194,37 +168,34 @@ export async function POST(req: NextRequest) {
         const payrollNumber = generatePayrollNumber(lastPayroll?.payrollNumber);
 
         // Create payroll
-        const payrollData: any = {
-            payrollNumber,
-            staffId,
-            month,
-            year,
-
-            basicSalary: salary,
-            allowances: allowancesAmt,
-            hra: hraAmt,
-            otherAllowances: otherAllowancesAmt,
-
-            daysPresent: daysPresent || 0,
-            daysAbsent: daysAbsent || 0,
-            totalWorkingDays: totalWorkingDays || 30,
-
-            absenceDeduction,
-            otherDeductions: otherDeductions || 0,
-
-            grossSalary,
-            totalDeductions,
-            netSalary,
-
-            paymentStatus: 'PENDING',
-            notes,
-        };
-
-        if (clinicId) payrollData.clinicId = clinicId;
-        if (generatedBy) payrollData.generatedBy = generatedBy;
-
         const payroll = await prisma.payroll.create({
-            data: payrollData,
+            data: {
+                payrollNumber,
+                staffId,
+                month,
+                year,
+
+                basicSalary: salary,
+                allowances: allowancesAmt,
+                hra: hraAmt,
+                otherAllowances: otherAllowancesAmt,
+
+                daysPresent: daysPresent || 0,
+                daysAbsent: daysAbsent || 0,
+                totalWorkingDays: totalWorkingDays || 30,
+
+                absenceDeduction,
+                otherDeductions: otherDeductions || 0,
+
+                grossSalary,
+                totalDeductions,
+                netSalary,
+
+                paymentStatus: 'PENDING',
+                notes,
+
+                clinicId: 'default-clinic', // ✅ CRITICAL FIX: Always provide clinicId
+            },
             include: {
                 staff: {
                     select: {
@@ -249,7 +220,7 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
     try {
         const body = await req.json();
-        const { payrollId, paymentDate, paymentMethod, paymentReference, paidBy, addedBy, clinicId } = body;
+        const { payrollId, paymentDate, paymentMethod, paymentReference } = body;
 
         if (!payrollId) {
             return NextResponse.json({ error: 'Payroll ID is required' }, { status: 400 });
@@ -272,18 +243,14 @@ export async function PATCH(req: NextRequest) {
         }
 
         // Update payroll status
-        const updateData: any = {
-            paymentStatus: 'PAID',
-            paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
-            paymentMethod: paymentMethod || 'BANK_TRANSFER',
-            paymentReference,
-        };
-
-        if (paidBy) updateData.paidBy = paidBy;
-
         const updated = await prisma.payroll.update({
             where: { id: payrollId },
-            data: updateData,
+            data: {
+                paymentStatus: 'PAID',
+                paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
+                paymentMethod: paymentMethod || 'BANK_TRANSFER',
+                paymentReference,
+            },
             include: {
                 staff: true,
                 paidByUser: {
@@ -296,26 +263,19 @@ export async function PATCH(req: NextRequest) {
         });
 
         // Create expense record for salary
-        const expenseData: any = {
-            expenseNumber: `SAL-${updated.payrollNumber}`,
-            category: 'SALARY',
-            subcategory: `${payroll.staff.role} Salary`,
-            amount: Number(updated.netSalary),
-            description: `Salary for ${payroll.staff.firstName} ${payroll.staff.lastName} - ${getMonthName(updated.month)} ${updated.year}`,
-            vendorName: `${payroll.staff.firstName} ${payroll.staff.lastName}`,
-            paymentMethod: updated.paymentMethod || 'BANK_TRANSFER',
-            expenseDate: updated.paymentDate || new Date(),
-            paymentStatus: 'PAID',
-        };
-
-        if (clinicId) expenseData.clinicId = clinicId;
-        if (addedBy) {
-            expenseData.addedBy = addedBy;
-            expenseData.approvedBy = addedBy;
-        }
-
         await prisma.expense.create({
-            data: expenseData,
+            data: {
+                expenseNumber: `SAL-${updated.payrollNumber}`,
+                category: 'SALARY',
+                subcategory: `${payroll.staff.role} Salary`,
+                amount: Number(updated.netSalary),
+                description: `Salary for ${payroll.staff.firstName} ${payroll.staff.lastName} - ${getMonthName(updated.month)} ${updated.year}`,
+                vendorName: `${payroll.staff.firstName} ${payroll.staff.lastName}`,
+                paymentMethod: updated.paymentMethod || 'BANK_TRANSFER',
+                expenseDate: updated.paymentDate || new Date(),
+                paymentStatus: 'PAID',
+                clinicId: 'default-clinic', // ✅ Include clinic
+            },
         });
 
         return NextResponse.json({

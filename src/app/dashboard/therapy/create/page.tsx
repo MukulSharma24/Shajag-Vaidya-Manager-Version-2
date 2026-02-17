@@ -15,11 +15,11 @@ interface Patient {
 }
 
 const THERAPY_TYPES = [
-    { id: 'VAMANA', name: 'Vamana', icon: '🤮', description: 'Therapeutic vomiting for Kapha disorders' },
-    { id: 'VIRECHANA', name: 'Virechana', icon: '💊', description: 'Purgation therapy for Pitta disorders' },
-    { id: 'BASTI', name: 'Basti', icon: '💧', description: 'Medicated enema for Vata disorders' },
-    { id: 'NASYA', name: 'Nasya', icon: '👃', description: 'Nasal administration of medicines' },
-    { id: 'RAKTAMOKSHANA', name: 'Raktamokshana', icon: '🩸', description: 'Bloodletting therapy' },
+    { id: 'VAMANA', name: 'Vamana', description: 'Therapeutic vomiting for Kapha disorders' },
+    { id: 'VIRECHANA', name: 'Virechana', description: 'Purgation therapy for Pitta disorders' },
+    { id: 'BASTI', name: 'Basti', description: 'Medicated enema for Vata disorders' },
+    { id: 'NASYA', name: 'Nasya', description: 'Nasal administration of medicines' },
+    { id: 'RAKTAMOKSHANA', name: 'Raktamokshana', description: 'Bloodletting therapy' },
 ];
 
 export default function CreateTherapyPlanPage() {
@@ -41,10 +41,8 @@ export default function CreateTherapyPlanPage() {
         instructions: '',
     });
 
-    // Session timing (flexible)
-    const [sessionTimes, setSessionTimes] = useState<string[]>(['10:00 AM']);
+    const [sessionTimes, setSessionTimes] = useState<string[]>(['10:00']);
 
-    // Search patients
     useEffect(() => {
         const searchPatients = async () => {
             if (patientSearch.trim().length < 2) {
@@ -88,7 +86,7 @@ export default function CreateTherapyPlanPage() {
     };
 
     const addSessionTime = () => {
-        setSessionTimes([...sessionTimes, '10:00 AM']);
+        setSessionTimes([...sessionTimes, '10:00']);
     };
 
     const removeSessionTime = (index: number) => {
@@ -106,21 +104,12 @@ export default function CreateTherapyPlanPage() {
     const calculateTotalSessions = () => {
         const { duration, frequency, therapyTypes } = formData;
         let sessionsPerTherapy = 0;
-
         switch (frequency) {
-            case 'DAILY':
-                sessionsPerTherapy = duration;
-                break;
-            case 'ALTERNATE_DAYS':
-                sessionsPerTherapy = Math.ceil(duration / 2);
-                break;
-            case 'WEEKLY':
-                sessionsPerTherapy = duration;
-                break;
-            default:
-                sessionsPerTherapy = duration;
+            case 'DAILY': sessionsPerTherapy = duration; break;
+            case 'ALTERNATE_DAYS': sessionsPerTherapy = Math.ceil(duration / 2); break;
+            case 'WEEKLY': sessionsPerTherapy = duration; break;
+            default: sessionsPerTherapy = duration;
         }
-
         return sessionsPerTherapy * therapyTypes.length;
     };
 
@@ -129,15 +118,8 @@ export default function CreateTherapyPlanPage() {
     };
 
     const handleSubmit = async () => {
-        if (!selectedPatient) {
-            alert('Please select a patient');
-            return;
-        }
-
-        if (formData.therapyTypes.length === 0) {
-            alert('Please select at least one therapy type');
-            return;
-        }
+        if (!selectedPatient) { alert('Please select a patient'); return; }
+        if (formData.therapyTypes.length === 0) { alert('Please select at least one therapy type'); return; }
 
         try {
             setLoading(true);
@@ -172,27 +154,28 @@ export default function CreateTherapyPlanPage() {
 
     return (
         <div className="min-h-screen bg-gray-50">
-            <div className="max-w-4xl mx-auto px-6 py-8">
+            <div className="max-w-3xl mx-auto px-6 py-8">
+
                 {/* Header */}
-                <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center justify-between mb-6">
                     <div>
-                        <h1 className="text-3xl font-bold text-gray-900 mb-2">Create Therapy Plan</h1>
-                        <p className="text-gray-600">Schedule and manage Panchakarma therapy sessions</p>
+                        <h1 className="text-2xl font-semibold text-gray-900">Create Therapy Plan</h1>
+                        <p className="text-sm text-gray-500 mt-1">Schedule and manage Panchakarma therapy sessions</p>
                     </div>
                     <button
                         onClick={() => router.back()}
-                        className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                        className="text-sm text-gray-500 hover:text-gray-700"
                     >
                         ← Back
                     </button>
                 </div>
 
-                {/* Form */}
-                <div className="space-y-6">
-                    {/* Step 1: Patient Selection */}
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                        <h2 className="text-xl font-bold text-gray-900 mb-4">
-                            1. Select Patient <span className="text-red-500">*</span>
+                <div className="space-y-5">
+
+                    {/* Step 1: Patient */}
+                    <div className="bg-white rounded-xl border border-gray-200 p-5">
+                        <h2 className="text-sm font-semibold text-gray-700 mb-4">
+                            Patient <span className="text-red-400">*</span>
                         </h2>
 
                         {!selectedPatient ? (
@@ -202,158 +185,141 @@ export default function CreateTherapyPlanPage() {
                                     value={patientSearch}
                                     onChange={(e) => setPatientSearch(e.target.value)}
                                     placeholder="Search by name, phone, or ID..."
-                                    className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:border-transparent transition-all"
+                                    className="w-full px-3 py-2.5 text-sm rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none transition-all"
                                     autoFocus
                                 />
-
                                 {searching && (
-                                    <div className="absolute right-4 top-3.5">
-                                        <div className="animate-spin h-5 w-5 border-2 border-gray-300 border-t-teal-600 rounded-full"></div>
+                                    <div className="absolute right-3 top-2.5">
+                                        <div className="animate-spin h-4 w-4 border-2 border-gray-200 border-t-teal-600 rounded-full" />
                                     </div>
                                 )}
-
                                 {showResults && (
-                                    <div className="absolute z-10 w-full mt-2 bg-white border border-gray-300 rounded-xl shadow-lg max-h-80 overflow-y-auto">
+                                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
                                         {searchResults.length > 0 ? (
                                             searchResults.map((patient) => (
                                                 <button
                                                     key={patient.id}
                                                     onClick={() => selectPatient(patient)}
-                                                    className="w-full px-4 py-3 hover:bg-teal-50 text-left border-b last:border-b-0 transition-colors"
+                                                    className="w-full px-4 py-3 hover:bg-gray-50 text-left border-b last:border-b-0 transition-colors"
                                                 >
-                                                    <div className="font-semibold text-gray-900">{patient.fullName}</div>
-                                                    <div className="text-sm text-gray-600 mt-1">
-                                                        ID: {patient.registrationId} • {patient.age} yrs • {patient.gender} • 📞 {patient.phoneNumber}
-                                                    </div>
+                                                    <p className="text-sm font-medium text-gray-800">{patient.fullName}</p>
+                                                    <p className="text-xs text-gray-500 mt-0.5">
+                                                        ID: {patient.registrationId} · {patient.age} yrs · {patient.gender} · {patient.phoneNumber}
+                                                    </p>
                                                     {patient.constitutionType && (
-                                                        <div className="mt-1">
-                                                            <span className="text-xs px-2 py-1 bg-amber-100 text-amber-800 rounded-full">
-                                                                {patient.constitutionType}
-                                                            </span>
-                                                        </div>
+                                                        <span className="inline-block mt-1 px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-full text-xs">
+                                                            {patient.constitutionType}
+                                                        </span>
                                                     )}
                                                 </button>
                                             ))
                                         ) : (
-                                            <div className="p-4 text-center text-gray-500">No patients found</div>
+                                            <p className="px-4 py-3 text-sm text-gray-400 text-center">No patients found</p>
                                         )}
                                     </div>
                                 )}
                             </div>
                         ) : (
-                            <div className="p-4 bg-gradient-to-r from-teal-50 to-green-50 border-2 border-teal-500 rounded-xl">
-                                <div className="flex items-start justify-between">
-                                    <div>
-                                        <p className="text-xs text-teal-700 mb-1 font-semibold">✓ SELECTED PATIENT</p>
-                                        <p className="text-xl font-bold text-gray-900 mb-2">{selectedPatient.fullName}</p>
-                                        <div className="flex items-center gap-4 text-sm text-gray-700">
-                                            <span>ID: {selectedPatient.registrationId}</span>
-                                            <span>{selectedPatient.age} yrs</span>
-                                            <span>{selectedPatient.gender}</span>
-                                            <span>📞 {selectedPatient.phoneNumber}</span>
-                                        </div>
-                                        {selectedPatient.constitutionType && (
-                                            <div className="mt-2">
-                                                <span className="px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-medium">
-                                                    {selectedPatient.constitutionType}
-                                                </span>
-                                            </div>
-                                        )}
-                                    </div>
-                                    <button
-                                        onClick={() => {
-                                            setSelectedPatient(null);
-                                            setPatientSearch('');
-                                        }}
-                                        className="px-4 py-2 bg-white border-2 border-red-500 hover:bg-red-50 text-red-600 rounded-lg text-sm font-semibold transition-colors"
-                                    >
-                                        Change
-                                    </button>
+                            <div className="flex items-center justify-between p-3 bg-teal-50 border border-teal-200 rounded-lg">
+                                <div>
+                                    <p className="text-sm font-semibold text-gray-800">{selectedPatient.fullName}</p>
+                                    <p className="text-xs text-gray-500 mt-0.5">
+                                        ID: {selectedPatient.registrationId} · {selectedPatient.age} yrs · {selectedPatient.gender} · {selectedPatient.phoneNumber}
+                                    </p>
+                                    {selectedPatient.constitutionType && (
+                                        <span className="inline-block mt-1 px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-full text-xs">
+                                            {selectedPatient.constitutionType}
+                                        </span>
+                                    )}
                                 </div>
+                                <button
+                                    onClick={() => { setSelectedPatient(null); setPatientSearch(''); }}
+                                    className="text-xs text-red-500 hover:text-red-700 font-medium"
+                                >
+                                    Change
+                                </button>
                             </div>
                         )}
                     </div>
-                    {/* Step 2: Therapy Selection */}
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                        <h2 className="text-xl font-bold text-gray-900 mb-4">
-                            2. Select Therapies <span className="text-red-500">*</span>
-                        </h2>
-                        <p className="text-sm text-gray-600 mb-4">Select one or more therapy types for this plan</p>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {/* Step 2: Therapies */}
+                    <div className="bg-white rounded-xl border border-gray-200 p-5">
+                        <h2 className="text-sm font-semibold text-gray-700 mb-1">
+                            Therapy Types <span className="text-red-400">*</span>
+                        </h2>
+                        <p className="text-xs text-gray-400 mb-4">Select one or more therapy types</p>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                             {THERAPY_TYPES.map(therapy => (
                                 <button
                                     key={therapy.id}
                                     onClick={() => toggleTherapy(therapy.id)}
-                                    className={`p-4 rounded-xl border-2 text-left transition-all ${
+                                    className={`p-3 rounded-lg border text-left transition-colors ${
                                         formData.therapyTypes.includes(therapy.id)
-                                            ? 'border-teal-500 bg-gradient-to-br from-teal-50 to-green-50 shadow-md'
-                                            : 'border-gray-200 hover:border-teal-300 bg-white'
+                                            ? 'border-teal-400 bg-teal-50'
+                                            : 'border-gray-200 bg-white hover:border-gray-300'
                                     }`}
                                 >
-                                    <div className="flex items-start justify-between mb-2">
-                                        <span className="text-3xl">{therapy.icon}</span>
+                                    <div className="flex items-center justify-between">
+                                        <p className="text-sm font-medium text-gray-800">{therapy.name}</p>
                                         {formData.therapyTypes.includes(therapy.id) && (
-                                            <span className="text-teal-600 text-xl">✓</span>
+                                            <span className="text-teal-600 text-xs font-semibold">✓</span>
                                         )}
                                     </div>
-                                    <h3 className="font-bold text-gray-900 mb-1">{therapy.name}</h3>
-                                    <p className="text-xs text-gray-600">{therapy.description}</p>
+                                    <p className="text-xs text-gray-400 mt-0.5">{therapy.description}</p>
                                 </button>
                             ))}
                         </div>
 
                         {formData.therapyTypes.length > 0 && (
-                            <div className="mt-4 p-3 bg-teal-50 rounded-lg">
-                                <p className="text-sm font-medium text-teal-900">
-                                    Selected: {formData.therapyTypes.map(id => THERAPY_TYPES.find(t => t.id === id)?.name).join(', ')}
-                                </p>
-                            </div>
+                            <p className="text-xs text-teal-700 mt-3 font-medium">
+                                Selected: {formData.therapyTypes.join(', ')}
+                            </p>
                         )}
                     </div>
 
                     {/* Step 3: Schedule */}
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                        <h2 className="text-xl font-bold text-gray-900 mb-4">3. Schedule Sessions</h2>
+                    <div className="bg-white rounded-xl border border-gray-200 p-5">
+                        <h2 className="text-sm font-semibold text-gray-700 mb-4">Schedule</h2>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Start Date <span className="text-red-500">*</span>
+                                <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                                    Start Date <span className="text-red-400">*</span>
                                 </label>
                                 <input
                                     type="date"
                                     value={formData.startDate}
                                     onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                                    className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                                    className="w-full px-3 py-2.5 text-sm rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
                                 />
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Duration <span className="text-red-500">*</span>
+                                <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                                    Duration <span className="text-red-400">*</span>
                                 </label>
-                                <div className="flex items-center gap-3">
+                                <div className="flex items-center gap-2">
                                     <input
                                         type="number"
                                         value={formData.duration}
                                         onChange={(e) => setFormData({ ...formData, duration: parseInt(e.target.value) || 0 })}
                                         min="1"
                                         max="365"
-                                        className="flex-1 px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                                        className="flex-1 px-3 py-2.5 text-sm rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
                                     />
-                                    <span className="text-gray-700 font-medium">days</span>
+                                    <span className="text-sm text-gray-500">days</span>
                                 </div>
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Frequency <span className="text-red-500">*</span>
+                                <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                                    Frequency <span className="text-red-400">*</span>
                                 </label>
                                 <select
                                     value={formData.frequency}
                                     onChange={(e) => setFormData({ ...formData, frequency: e.target.value })}
-                                    className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                                    className="w-full px-3 py-2.5 text-sm rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
                                 >
                                     <option value="DAILY">Daily</option>
                                     <option value="ALTERNATE_DAYS">Alternate Days</option>
@@ -362,7 +328,7 @@ export default function CreateTherapyPlanPage() {
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                <label className="block text-xs font-medium text-gray-600 mb-1.5">
                                     Price per Session (₹)
                                 </label>
                                 <input
@@ -371,41 +337,36 @@ export default function CreateTherapyPlanPage() {
                                     onChange={(e) => setFormData({ ...formData, pricePerSession: parseFloat(e.target.value) || 0 })}
                                     min="0"
                                     step="100"
-                                    className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                                    className="w-full px-3 py-2.5 text-sm rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
                                 />
                             </div>
                         </div>
 
-                        {/* Session Times (Flexible) */}
-                        <div className="mt-6">
-                            <div className="flex items-center justify-between mb-3">
-                                <label className="text-sm font-medium text-gray-700">
-                                    Session Times (Optional)
-                                </label>
+                        {/* Session Times */}
+                        <div className="mt-5">
+                            <div className="flex items-center justify-between mb-2">
+                                <label className="text-xs font-medium text-gray-600">Session Times (Optional)</label>
                                 <button
                                     onClick={addSessionTime}
-                                    className="px-3 py-1.5 bg-teal-100 hover:bg-teal-200 text-teal-700 rounded-lg text-sm font-medium transition-colors"
+                                    className="text-xs text-teal-600 hover:text-teal-700 font-medium"
                                 >
                                     + Add Time
                                 </button>
                             </div>
-                            <p className="text-xs text-gray-500 mb-3">
-                                Add multiple times if sessions occur at different times. Times will cycle through sessions.
-                            </p>
-
+                            <p className="text-xs text-gray-400 mb-2">Times will cycle through sessions if multiple are added.</p>
                             <div className="space-y-2">
                                 {sessionTimes.map((time, index) => (
-                                    <div key={index} className="flex items-center gap-3">
+                                    <div key={index} className="flex items-center gap-2">
                                         <input
                                             type="time"
                                             value={time}
                                             onChange={(e) => updateSessionTime(index, e.target.value)}
-                                            className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                                            className="flex-1 px-3 py-2 text-sm rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
                                         />
                                         {sessionTimes.length > 1 && (
                                             <button
                                                 onClick={() => removeSessionTime(index)}
-                                                className="px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                className="text-red-400 hover:text-red-600 text-sm px-2"
                                             >
                                                 ✕
                                             </button>
@@ -416,44 +377,42 @@ export default function CreateTherapyPlanPage() {
                         </div>
 
                         {/* Summary */}
-                        <div className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200">
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="mt-5 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                            <div className="grid grid-cols-3 gap-4 text-center">
                                 <div>
-                                    <p className="text-xs text-gray-600 mb-1">Total Sessions</p>
-                                    <p className="text-2xl font-bold text-gray-900">{calculateTotalSessions()}</p>
+                                    <p className="text-xs text-gray-400 mb-0.5">Total Sessions</p>
+                                    <p className="text-xl font-bold text-gray-800">{calculateTotalSessions()}</p>
                                 </div>
                                 <div>
-                                    <p className="text-xs text-gray-600 mb-1">Per Session</p>
-                                    <p className="text-2xl font-bold text-gray-900">₹{formData.pricePerSession}</p>
+                                    <p className="text-xs text-gray-400 mb-0.5">Per Session</p>
+                                    <p className="text-xl font-bold text-gray-800">₹{formData.pricePerSession}</p>
                                 </div>
-                                <div className="col-span-2">
-                                    <p className="text-xs text-gray-600 mb-1">Total Amount</p>
-                                    <p className="text-3xl font-bold text-teal-600">₹{calculateTotalAmount().toLocaleString()}</p>
+                                <div>
+                                    <p className="text-xs text-gray-400 mb-0.5">Total Amount</p>
+                                    <p className="text-xl font-bold text-teal-600">₹{calculateTotalAmount().toLocaleString()}</p>
                                 </div>
                             </div>
                         </div>
                     </div>
 
                     {/* Step 4: Notes */}
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                        <h2 className="text-xl font-bold text-gray-900 mb-4">4. Additional Information</h2>
-
+                    <div className="bg-white rounded-xl border border-gray-200 p-5">
+                        <h2 className="text-sm font-semibold text-gray-700 mb-4">Additional Information</h2>
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Instructions for Patient
+                                <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                                    Patient Instructions
                                 </label>
                                 <textarea
                                     value={formData.instructions}
                                     onChange={(e) => setFormData({ ...formData, instructions: e.target.value })}
-                                    placeholder="E.g., Come empty stomach, avoid cold water, bring loose clothes..."
+                                    placeholder="E.g., Come empty stomach, avoid cold water..."
                                     rows={3}
-                                    className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:border-transparent resize-none"
+                                    className="w-full px-3 py-2.5 text-sm rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none resize-none"
                                 />
                             </div>
-
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                <label className="block text-xs font-medium text-gray-600 mb-1.5">
                                     Internal Notes
                                 </label>
                                 <textarea
@@ -461,26 +420,26 @@ export default function CreateTherapyPlanPage() {
                                     onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                                     placeholder="Private notes for staff/doctors..."
                                     rows={3}
-                                    className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:border-transparent resize-none"
+                                    className="w-full px-3 py-2.5 text-sm rounded-lg border border-gray-200 focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none resize-none"
                                 />
                             </div>
                         </div>
                     </div>
 
                     {/* Actions */}
-                    <div className="flex gap-4">
+                    <div className="flex gap-3">
                         <button
                             onClick={() => router.back()}
-                            className="flex-1 px-6 py-3 bg-white border-2 border-gray-300 hover:bg-gray-50 text-gray-700 rounded-xl font-semibold transition-colors"
+                            className="flex-1 px-4 py-2.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-600 text-sm font-medium rounded-lg transition-colors"
                         >
                             Cancel
                         </button>
                         <button
                             onClick={handleSubmit}
                             disabled={loading || !selectedPatient || formData.therapyTypes.length === 0}
-                            className="flex-1 px-6 py-3 bg-gradient-to-r from-teal-600 to-green-600 hover:from-teal-700 hover:to-green-700 text-white rounded-xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg hover:shadow-xl"
+                            className="flex-1 px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         >
-                            {loading ? '⏳ Creating...' : '✓ Create Therapy Plan'}
+                            {loading ? 'Creating...' : 'Create Therapy Plan'}
                         </button>
                     </div>
                 </div>

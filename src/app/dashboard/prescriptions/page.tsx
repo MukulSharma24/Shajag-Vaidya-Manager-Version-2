@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import NextStepsPopup from '@/components/Popup/NextStepsPopup';
 
 // ============================================
 // INTERFACES
@@ -8,16 +9,15 @@ import React, { useState, useEffect, useRef } from 'react';
 
 interface Patient {
     id: string;
-    fullName: string;           // Your actual field name
+    fullName: string;
     dateOfBirth: string;
     age: number;
     gender: string;
-    phoneNumber: string;        // Your actual field name
+    phoneNumber: string;
     email?: string;
     bloodGroup?: string;
     addressLine1?: string;
     constitutionType: string;
-    // Optional - you can add this later
     registrationId?: string;
 }
 
@@ -33,6 +33,12 @@ interface Medicine {
     stockStatus: string;
     stockLabel: string;
     available: boolean;
+    categoryId?: string;
+}
+
+interface Category {
+    id: string;
+    name: string;
 }
 
 interface PrescriptionMedicine {
@@ -90,6 +96,9 @@ export default function PrescriptionsPage() {
     const [loadingPatients, setLoadingPatients] = useState(true);
     const [preselectedPatient, setPreselectedPatient] = useState<Patient | null>(null);
 
+    const [showNextSteps, setShowNextSteps] = useState(false);
+    const [nextStepsData, setNextStepsData] = useState<{ patientId: string; patientName: string } | null>(null);
+
     const [stats, setStats] = useState({
         total: 0,
         today: 0,
@@ -139,20 +148,16 @@ export default function PrescriptionsPage() {
         try {
             setLoadingPatients(true);
 
-            // Get today's date range (start and end of day)
             const today = new Date();
             today.setHours(0, 0, 0, 0);
             const tomorrow = new Date(today);
             tomorrow.setDate(tomorrow.getDate() + 1);
 
-            console.log('📅 Fetching appointments for:', today.toDateString());
-
-            // Fetch today's appointments with patient details
             const res = await fetch(
                 `/api/appointments?` + new URLSearchParams({
                     startDate: today.toISOString(),
                     endDate: tomorrow.toISOString(),
-                    status: 'scheduled', // Only scheduled appointments
+                    status: 'scheduled',
                 })
             );
 
@@ -160,13 +165,9 @@ export default function PrescriptionsPage() {
                 const data = await res.json();
                 const appointments = data.appointments || [];
 
-                console.log('✅ Found', appointments.length, 'appointments today');
-
-                // Map appointments to TodayPatient format
                 const todayPats: TodayPatient[] = appointments
-                    .filter((apt: any) => apt.patient) // Only appointments with patients
+                    .filter((apt: any) => apt.patient)
                     .map((apt: any) => ({
-                        // Patient details
                         id: apt.patient.id,
                         fullName: apt.patient.fullName,
                         dateOfBirth: apt.patient.dateOfBirth,
@@ -178,7 +179,6 @@ export default function PrescriptionsPage() {
                         addressLine1: apt.patient.addressLine1,
                         constitutionType: apt.patient.constitutionType,
                         registrationId: apt.patient.registrationId,
-                        // Appointment details
                         appointmentTime: apt.appointmentTime,
                         appointmentReason: apt.reason,
                         hasAppointment: true,
@@ -186,11 +186,10 @@ export default function PrescriptionsPage() {
 
                 setTodayPatients(todayPats);
             } else {
-                console.error('❌ Failed to fetch appointments:', res.status);
                 setTodayPatients([]);
             }
         } catch (error) {
-            console.error('❌ Error fetching today patients:', error);
+            console.error('Error fetching today patients:', error);
             setTodayPatients([]);
         } finally {
             setLoadingPatients(false);
@@ -322,25 +321,20 @@ export default function PrescriptionsPage() {
                                     onClick={() => handleQuickPrescription(patient)}
                                     className="group relative p-4 bg-gradient-to-br from-white to-gray-50 hover:from-teal-50 hover:to-teal-100 border-2 border-gray-200 hover:border-teal-400 rounded-xl transition-all duration-200 hover:shadow-lg hover:-translate-y-1"
                                 >
-                                    {/* Appointment Time Badge */}
                                     {patient.hasAppointment && patient.appointmentTime && (
                                         <div className="absolute top-2 right-2">
-                    <span className="px-2 py-0.5 bg-teal-600 text-white text-xs font-semibold rounded">
-                        {patient.appointmentTime}
-                    </span>
+                                            <span className="px-2 py-0.5 bg-teal-600 text-white text-xs font-semibold rounded">
+                                                {patient.appointmentTime}
+                                            </span>
                                         </div>
                                     )}
-
-                                    {/* Avatar */}
                                     <div className="flex justify-center mb-3">
                                         <div className="w-14 h-14 bg-gradient-to-br from-teal-500 to-teal-600 group-hover:from-teal-600 group-hover:to-teal-700 rounded-full flex items-center justify-center shadow-md ring-4 ring-white transition-all">
-                    <span className="text-white font-bold text-lg">
-                        {patient.fullName?.charAt(0)?.toUpperCase() || 'P'}
-                    </span>
+                                            <span className="text-white font-bold text-lg">
+                                                {patient.fullName?.charAt(0)?.toUpperCase() || 'P'}
+                                            </span>
                                         </div>
                                     </div>
-
-                                    {/* Info */}
                                     <div className="text-center">
                                         <p className="text-sm font-semibold text-gray-900 truncate mb-1">
                                             {patient.fullName}
@@ -351,16 +345,12 @@ export default function PrescriptionsPage() {
                                         <p className="text-xs text-gray-400 mt-1 font-mono truncate">
                                             {patient.phoneNumber}
                                         </p>
-
-                                        {/* Registration ID */}
                                         {patient.registrationId && (
                                             <p className="text-xs text-teal-600 font-semibold mt-1">
                                                 #{patient.registrationId}
                                             </p>
                                         )}
                                     </div>
-
-                                    {/* Hover Icon */}
                                     <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                         <div className="w-10 h-10 bg-teal-600 rounded-full flex items-center justify-center shadow-xl">
                                             <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -547,12 +537,14 @@ export default function PrescriptionsPage() {
                         setShowCreateModal(false);
                         setPreselectedPatient(null);
                     }}
-                    onSuccess={() => {
+                    onSuccess={(patientId, patientName) => {
                         setShowCreateModal(false);
                         setPreselectedPatient(null);
                         fetchPrescriptions();
                         fetchStats();
                         fetchTodayPatients();
+                        setNextStepsData({ patientId, patientName });
+                        setShowNextSteps(true);
                     }}
                 />
             )}
@@ -567,6 +559,18 @@ export default function PrescriptionsPage() {
                     onDispense={() => {
                         handleDispense(selectedPrescription.id);
                         setShowViewModal(false);
+                    }}
+                />
+            )}
+
+            {showNextSteps && nextStepsData && (
+                <NextStepsPopup
+                    show={showNextSteps}
+                    patientId={nextStepsData.patientId}
+                    patientName={nextStepsData.patientName}
+                    onClose={() => {
+                        setShowNextSteps(false);
+                        setNextStepsData(null);
                     }}
                 />
             )}
@@ -727,7 +731,7 @@ function CreatePrescriptionModal({
                                  }: {
     preselectedPatient: Patient | null;
     onClose: () => void;
-    onSuccess: () => void;
+    onSuccess: (patientId: string, patientName: string) => void;
 }) {
     const [patients, setPatients] = useState<Patient[]>([]);
     const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
@@ -748,10 +752,20 @@ function CreatePrescriptionModal({
     const [medicineResults, setMedicineResults] = useState<Medicine[]>([]);
     const [showMedicineDropdown, setShowMedicineDropdown] = useState(false);
 
+    // Category-based medicine selection
+    const [categories, setCategories] = useState<Category[]>([]);
+    const [selectedCategory, setSelectedCategory] = useState('');
+    const [categoryMedicines, setCategoryMedicines] = useState<Medicine[]>([]);
+    const [loadingCategoryMedicines, setLoadingCategoryMedicines] = useState(false);
+
     const [submitting, setSubmitting] = useState(false);
 
     const patientDropdownRef = useRef<HTMLDivElement>(null);
     const medicineDropdownRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        fetchCategories();
+    }, []);
 
     useEffect(() => {
         if (patientSearch && patientSearch.length >= 2) {
@@ -797,55 +811,55 @@ function CreatePrescriptionModal({
         }
     }, [preselectedPatient]);
 
-    const searchPatients = async (query: string) => {
-        try {
-            console.log('🔍 Searching patients with query:', query);
-            const res = await fetch(`/api/patients?search=${encodeURIComponent(query)}`);
-            console.log('📡 Response status:', res.status);
+    useEffect(() => {
+        if (selectedCategory) {
+            fetchCategoryMedicines(selectedCategory);
+        } else {
+            setCategoryMedicines([]);
+        }
+    }, [selectedCategory]);
 
+    const fetchCategories = async () => {
+        try {
+            const res = await fetch('/api/categories');
             if (res.ok) {
                 const data = await res.json();
-                console.log('📦 Full API Response:', data);
-
-                // Handle different response structures
-                let patientList = [];
-                if (data.patients) {
-                    patientList = data.patients;
-                } else if (Array.isArray(data)) {
-                    patientList = data;
-                } else {
-                    console.warn('⚠️ Unexpected response structure:', data);
-                }
-
-                console.log('👥 Patient list:', patientList);
-                console.log('📊 Number of patients found:', patientList.length);
-
-                // Debug each patient
-                patientList.forEach((p: any, i: number) => {
-                    console.log(`Patient ${i + 1}:`, {
-                        id: p.id,
-                        fullName: p.fullName,
-                        phoneNumber: p.phoneNumber,
-                        age: p.age,
-                        gender: p.gender
-                    });
-                });
-
-                setPatients(patientList);
-
-                if (patientList.length > 0) {
-                    setShowPatientDropdown(true);
-                    console.log('✅ Showing dropdown with', patientList.length, 'patients');
-                } else {
-                    console.log('⚠️ No patients found, dropdown hidden');
-                }
-            } else {
-                console.error('❌ API Error:', res.status, res.statusText);
-                const errorText = await res.text();
-                console.error('Error details:', errorText);
+                setCategories(data.categories || data || []);
             }
         } catch (error) {
-            console.error('❌ Error searching patients:', error);
+            console.error('Error fetching categories:', error);
+        }
+    };
+
+    const fetchCategoryMedicines = async (categoryId: string) => {
+        try {
+            setLoadingCategoryMedicines(true);
+            // Use the dedicated endpoint that queries via MedicineCategory junction table
+            const res = await fetch(`/api/medicines/by-category/${categoryId}`);
+            if (res.ok) {
+                const data = await res.json();
+                setCategoryMedicines(data.medicines || []);
+            }
+        } catch (error) {
+            console.error('Error fetching category medicines:', error);
+        } finally {
+            setLoadingCategoryMedicines(false);
+        }
+    };
+
+    const searchPatients = async (query: string) => {
+        try {
+            const res = await fetch(`/api/patients?search=${encodeURIComponent(query)}`);
+            if (res.ok) {
+                const data = await res.json();
+                let patientList = data.patients || (Array.isArray(data) ? data : []);
+                setPatients(patientList);
+                if (patientList.length > 0) {
+                    setShowPatientDropdown(true);
+                }
+            }
+        } catch (error) {
+            console.error('Error searching patients:', error);
         }
     };
 
@@ -881,6 +895,11 @@ function CreatePrescriptionModal({
     };
 
     const addMedicine = (medicine: Medicine) => {
+        // Check if medicine already added
+        if (medicines.some(m => m.medicineId === medicine.id)) {
+            return;
+        }
+
         const newMedicine: PrescriptionMedicine = {
             medicineId: medicine.id,
             medicineName: medicine.name,
@@ -1004,8 +1023,7 @@ function CreatePrescriptionModal({
             });
 
             if (res.ok) {
-                alert('Prescription created successfully!');
-                onSuccess();
+                onSuccess(selectedPatient.id, selectedPatient.fullName);
             } else {
                 const error = await res.json();
                 alert(error.error || 'Failed to create prescription');
@@ -1021,9 +1039,10 @@ function CreatePrescriptionModal({
     return (
         <div className="modal-overlay" onClick={onClose}>
             <div className="modal-content max-w-6xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-                <div className="modal-header">
+                {/* Fixed header with close button on right */}
+                <div className="modal-header flex items-center justify-between">
                     <h2 className="text-xl font-semibold text-gray-900">Create New Prescription</h2>
-                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1">
                         <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                         </svg>
@@ -1069,21 +1088,9 @@ function CreatePrescriptionModal({
                                                         </span>
                                                     </div>
                                                     <div className="flex-1 min-w-0">
-                                                        <div className="flex items-center justify-between gap-2 mb-1">
-                                                            <p className="text-sm font-semibold text-gray-900">{patient.fullName}</p>
-                                                            {patient.id && (
-                                                                <span className="px-2 py-0.5 bg-teal-100 text-teal-700 text-xs rounded font-semibold">
-                                                                    ID: {patient.id.slice(0, 8).toUpperCase()}
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                        <p className="text-xs text-gray-700 font-medium">
-                                                            📞 {patient.phoneNumber}
-                                                        </p>
-                                                        <p className="text-xs text-gray-500 mt-0.5">
-                                                            {patient.age}Y • {patient.gender}
-                                                            {patient.email && ` • ${patient.email}`}
-                                                        </p>
+                                                        <p className="text-sm font-semibold text-gray-900">{patient.fullName}</p>
+                                                        <p className="text-xs text-gray-700 font-medium">📞 {patient.phoneNumber}</p>
+                                                        <p className="text-xs text-gray-500 mt-0.5">{patient.age}Y • {patient.gender}</p>
                                                     </div>
                                                 </div>
                                             </button>
@@ -1102,19 +1109,9 @@ function CreatePrescriptionModal({
                                                 </span>
                                             </div>
                                             <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-2 mb-1">
-                                                    <p className="text-sm font-semibold text-gray-900">{selectedPatient.fullName}</p>
-                                                    <span className="px-2 py-0.5 bg-teal-100 text-teal-700 text-xs rounded font-semibold">
-                                                        ID: {selectedPatient.id.slice(0, 8).toUpperCase()}
-                                                    </span>
-                                                </div>
-                                                <p className="text-xs text-gray-700 font-medium">
-                                                    📞 {selectedPatient.phoneNumber}
-                                                </p>
-                                                <p className="text-xs text-gray-500 mt-0.5">
-                                                    {selectedPatient.age}Y • {selectedPatient.gender}
-                                                    {selectedPatient.email && ` • ${selectedPatient.email}`}
-                                                </p>
+                                                <p className="text-sm font-semibold text-gray-900">{selectedPatient.fullName}</p>
+                                                <p className="text-xs text-gray-700 font-medium">📞 {selectedPatient.phoneNumber}</p>
+                                                <p className="text-xs text-gray-500 mt-0.5">{selectedPatient.age}Y • {selectedPatient.gender}</p>
                                             </div>
                                         </div>
                                         {patientHistory.length > 0 && (
@@ -1194,6 +1191,70 @@ function CreatePrescriptionModal({
                                 <span className="text-xs text-gray-500">{medicines.length} medicine(s) added</span>
                             </div>
 
+                            {/* Category Filter */}
+                            <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                                <label className="form-label text-xs mb-2">Filter by Category</label>
+                                <select
+                                    value={selectedCategory}
+                                    onChange={(e) => setSelectedCategory(e.target.value)}
+                                    className="form-select text-sm"
+                                >
+                                    <option value="">Select a category to view medicines</option>
+                                    {categories.map((cat) => (
+                                        <option key={cat.id} value={cat.id}>{cat.name}</option>
+                                    ))}
+                                </select>
+
+                                {/* Category Medicines Grid */}
+                                {selectedCategory && (
+                                    <div className="mt-3">
+                                        {loadingCategoryMedicines ? (
+                                            <div className="flex items-center justify-center py-4">
+                                                <div className="animate-spin h-5 w-5 border-2 border-teal-200 border-t-teal-600 rounded-full" />
+                                            </div>
+                                        ) : categoryMedicines.length === 0 ? (
+                                            <p className="text-xs text-gray-500 text-center py-4">No medicines in this category</p>
+                                        ) : (
+                                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-48 overflow-y-auto">
+                                                {categoryMedicines.map((med) => {
+                                                    const isAdded = medicines.some(m => m.medicineId === med.id);
+                                                    return (
+                                                        <button
+                                                            key={med.id}
+                                                            type="button"
+                                                            onClick={() => !isAdded && med.available && addMedicine(med)}
+                                                            disabled={isAdded || !med.available}
+                                                            className={`p-2 rounded-lg border text-left transition-all ${
+                                                                isAdded
+                                                                    ? 'bg-teal-50 border-teal-300 cursor-default'
+                                                                    : med.available
+                                                                        ? 'bg-white border-gray-200 hover:border-teal-400 hover:bg-teal-50 cursor-pointer'
+                                                                        : 'bg-gray-50 border-gray-200 cursor-not-allowed opacity-60'
+                                                            }`}
+                                                        >
+                                                            <p className="text-xs font-medium text-gray-900 truncate">{med.name}</p>
+                                                            <p className="text-xs text-gray-500">{med.strength || 'N/A'}</p>
+                                                            <div className="flex items-center justify-between mt-1">
+                                                                <span className={`text-xs ${
+                                                                    med.stockStatus === 'IN_STOCK' ? 'text-green-600' :
+                                                                        med.stockStatus === 'LOW_STOCK' ? 'text-amber-600' : 'text-red-600'
+                                                                }`}>
+                                                                    {med.currentStock} left
+                                                                </span>
+                                                                {isAdded && (
+                                                                    <span className="text-xs text-teal-600 font-medium">✓ Added</span>
+                                                                )}
+                                                            </div>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Search Medicine */}
                             <div className="relative mb-4" ref={medicineDropdownRef}>
                                 <label className="form-label">Search & Add Medicine</label>
                                 <input
@@ -1463,12 +1524,13 @@ function ViewPrescriptionModal({ prescriptionId, onClose, onDispense }: {
     return (
         <div className="modal-overlay" onClick={onClose}>
             <div className="modal-content max-w-4xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-                <div className="modal-header">
+                {/* Fixed header with close button on right */}
+                <div className="modal-header flex items-center justify-between">
                     <div>
                         <h2 className="text-xl font-semibold text-gray-900">Prescription Details</h2>
                         <p className="text-sm text-gray-500 mt-1">{prescription.prescriptionNo}</p>
                     </div>
-                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1">
                         <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                         </svg>

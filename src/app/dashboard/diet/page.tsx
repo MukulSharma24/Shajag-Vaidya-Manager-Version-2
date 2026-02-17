@@ -95,7 +95,8 @@ export default function DietPlansPage() {
 
     return (
         <div className="min-h-screen bg-gray-50">
-            <div className="max-w-7xl mx-auto px-6 py-8">
+            {/* FIXED: Changed from max-w-7xl to w-full with pl-6 pr-6 to match other modules */}
+            <div className="w-full pl-6 pr-6 py-8">
                 {/* Header */}
                 <div className="flex items-center justify-between mb-8">
                     <div>

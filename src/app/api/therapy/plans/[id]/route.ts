@@ -44,11 +44,16 @@ export async function GET(
             );
         }
 
-        // Calculate stats
+        // FIX: Use date-only comparison so today's sessions always appear in upcoming
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
         const completedSessions = plan.sessions.filter(s => s.status === 'COMPLETED');
-        const upcomingSessions = plan.sessions.filter(s =>
-            s.status === 'SCHEDULED' && new Date(s.scheduledDate) >= new Date()
-        );
+        const upcomingSessions = plan.sessions.filter(s => {
+            const sessionDate = new Date(s.scheduledDate);
+            sessionDate.setHours(0, 0, 0, 0);
+            return s.status === 'SCHEDULED' && sessionDate >= today;
+        });
         const missedSessions = plan.sessions.filter(s => s.status === 'MISSED');
 
         const planWithStats = {
@@ -103,22 +108,30 @@ export async function PUT(
     }
 }
 
-// DELETE /api/therapy/plans/[id] - Cancel plan
+// DELETE /api/therapy/plans/[id] - Delete therapy plan (HARD DELETE)
 export async function DELETE(
     req: NextRequest,
     { params }: { params: { id: string } }
 ) {
     try {
-        await prisma.therapyPlan.update({
-            where: { id: params.id },
-            data: { status: 'CANCELLED' },
+        // First, delete all associated sessions
+        await prisma.therapySession.deleteMany({
+            where: { planId: params.id },
         });
 
-        return NextResponse.json({ success: true });
+        // Then delete the therapy plan itself
+        await prisma.therapyPlan.delete({
+            where: { id: params.id },
+        });
+
+        return NextResponse.json({
+            success: true,
+            message: 'Therapy plan and all sessions deleted successfully'
+        });
     } catch (error) {
-        console.error('Error cancelling therapy plan:', error);
+        console.error('Error deleting therapy plan:', error);
         return NextResponse.json(
-            { error: 'Failed to cancel therapy plan' },
+            { error: 'Failed to delete therapy plan' },
             { status: 500 }
         );
     }

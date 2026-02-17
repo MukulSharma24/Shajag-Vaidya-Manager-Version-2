@@ -8,7 +8,7 @@ datasource db {
 }
 
 // ============================================
-// CORE MODELS - YOUR EXISTING + CLINIC MODEL
+// CORE MODELS
 // ============================================
 
 model Clinic {
@@ -20,45 +20,58 @@ model Clinic {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Relations
-  bills            Bill[]
-  payments         Payment[]
-  patientLedgers   PatientLedger[]
-  expenses         Expense[]
-  staff            Staff[]
-  staffAttendance  StaffAttendance[]
-  staffLeaves      StaffLeave[]
-  leaveBalances    LeaveBalance[]
-  payrolls         Payroll[]
-  staffPerformance StaffPerformance[]
+  bills                Bill[]
+  payments             Payment[]
+  patientLedgers       PatientLedger[]
+  expenses             Expense[]
+  staff                Staff[]
+  staffAttendance      StaffAttendance[]
+  staffLeaves          StaffLeave[]
+  leaveBalances        LeaveBalance[]
+  payrolls             Payroll[]
+  staffPerformance     StaffPerformance[]
+  quickIncome          QuickIncome[]
+  paymentConfirmations PaymentConfirmation[]
 
   @@map("clinics")
 }
 
 model User {
-  id        String   @id @default(uuid())
-  name      String
-  email     String   @unique
-  createdAt DateTime @default(now())
+  id       String  @id @default(uuid())
+  name     String
+  email    String  @unique
+  password String?
+  role     String  @default("STAFF")
 
-  // Billing relations
+  resetToken       String?   @unique
+  resetTokenExpiry DateTime?
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
   billedBills      Bill[]    @relation("BilledBy")
   finalizedBills   Bill[]    @relation("FinalizedBy")
   paymentsReceived Payment[] @relation("ReceivedBy")
   expensesAdded    Expense[] @relation("AddedBy")
   expensesApproved Expense[] @relation("ApprovedBy")
 
-  // Staff relations
   staff            Staff?            @relation("UserStaff")
   attendanceMarked StaffAttendance[] @relation("MarkedBy")
   leavesReviewed   StaffLeave[]      @relation("ReviewedBy")
   payrollGenerated Payroll[]         @relation("GeneratedBy")
   payrollPaid      Payroll[]         @relation("PaidBy")
+
+  patient Patient?
 }
 
 model Patient {
-  id               String   @id @default(uuid())
-  registrationId   Int      @unique @default(autoincrement())
+  id             String @id @default(uuid())
+  registrationId Int    @unique @default(autoincrement())
+
+  userId String? @unique
+  user   User?   @relation(fields: [userId], references: [id])
+
   fullName         String
   dateOfBirth      DateTime
   age              Int
@@ -78,13 +91,14 @@ model Patient {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  appointments   Appointment[]
-  Prescription   Prescription[]
-  bills          Bill[]
-  payments       Payment[]
-  patientLedgers PatientLedger[]
-  TherapyPlan    TherapyPlan[]
-  DietPlan       DietPlan[]
+  appointments         Appointment[]
+  Prescription         Prescription[]
+  bills                Bill[]
+  payments             Payment[]
+  patientLedgers       PatientLedger[]
+  TherapyPlan          TherapyPlan[]
+  DietPlan             DietPlan[]
+  paymentConfirmations PaymentConfirmation[]
 
   @@index([fullName])
   @@index([phoneNumber])
@@ -607,6 +621,78 @@ model Expense {
 }
 
 // ============================================
+// QUICK INCOME MODEL
+// Records offline/QR/cash payments directly into profit
+// ============================================
+
+model QuickIncome {
+  id          String @id @default(cuid())
+  entryNumber String @unique @db.VarChar(50)
+
+  amount      Decimal @db.Decimal(10, 2)
+  description String? @db.Text
+
+  patientName     String? @db.VarChar(255)
+  patientId       String?
+  paymentMethod   String  @default("UPI")
+  referenceNumber String? @db.VarChar(255)
+
+  category     String   @default("DIRECT_PAYMENT")
+  receivedDate DateTime @default(now())
+
+  clinicId   String?
+  clinic     Clinic? @relation(fields: [clinicId], references: [id], onDelete: SetNull)
+  recordedBy String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clinicId])
+  @@index([receivedDate])
+  @@index([category])
+  @@index([patientId])
+  @@map("quick_income")
+}
+
+// ============================================
+// PAYMENT CONFIRMATION MODEL
+// Stores patient self-reported payment confirmations
+// ============================================
+
+model PaymentConfirmation {
+  id                 String @id @default(cuid())
+  confirmationNumber String @unique @db.VarChar(50)
+
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  patientName  String @db.VarChar(255)
+  patientEmail String @db.VarChar(255)
+  patientPhone String @db.VarChar(20)
+
+  amount Decimal @db.Decimal(10, 2)
+
+  status String @default("PENDING_VERIFICATION") // PENDING_VERIFICATION, VERIFIED, REJECTED
+
+  notes           String?   @db.Text
+  verifiedBy      String?
+  verifiedAt      DateTime?
+  rejectionReason String?   @db.Text
+
+  clinicId String?
+  clinic   Clinic? @relation(fields: [clinicId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([patientId])
+  @@index([clinicId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("payment_confirmations")
+}
+
+// ============================================
 // STAFF MANAGEMENT MODULE MODELS
 // ============================================
 
@@ -882,7 +968,6 @@ model StaffPerformance {
 
 // ============================================
 // THERAPY MANAGEMENT MODULE
-// Copy-paste this at the END of your schema.prisma file
 // ============================================
 
 model TherapyPlan {
@@ -961,7 +1046,6 @@ model TherapySession {
 
 // ============================================
 // DIET MANAGEMENT MODULE
-// Add these models to your schema.prisma file
 // ============================================
 
 model DietPlan {
@@ -971,24 +1055,21 @@ model DietPlan {
   patientId String
   patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
-  constitution String // VATA, PITTA, KAPHA, TRIDOSHA
-  season       String // SPRING, SUMMER, MONSOON, AUTUMN, WINTER
+  constitution String
+  season       String
 
-  status String @default("ACTIVE") // ACTIVE, ARCHIVED
+  status String @default("ACTIVE")
 
-  // Meals stored as JSON for flexibility
   morningMeal String @db.Text
   lunchMeal   String @db.Text
   eveningMeal String @db.Text
 
-  // Additional info
   guidelines   String? @db.Text
   restrictions String? @db.Text
   notes        String? @db.Text
 
-  // Tracking
   followUpDate DateTime?
-  compliance   String?   @default("NOT_ASSESSED") // FOLLOWING, PARTIAL, NOT_FOLLOWING, NOT_ASSESSED
+  compliance   String?   @default("NOT_ASSESSED")
 
   createdBy String?
   createdAt DateTime @default(now())
@@ -1000,6 +1081,3 @@ model DietPlan {
   @@index([status])
   @@map("diet_plans")
 }
-
-// Also add this line to Patient model:
-// dietPlans DietPlan[]

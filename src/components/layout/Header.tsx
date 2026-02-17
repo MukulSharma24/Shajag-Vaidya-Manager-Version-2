@@ -1,35 +1,11 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function Header() {
-    const router = useRouter();
-    const [currentUser, setCurrentUser] = useState('admin');
-    const [currentRole, setCurrentRole] = useState('Practice Owner');
+    const { user, logout } = useAuth();
     const [selectedLanguage, setSelectedLanguage] = useState('en');
-
-    useEffect(() => {
-        const user = localStorage.getItem('currentUser') || 'admin';
-        const role = localStorage.getItem('currentRole') || 'owner';
-        setCurrentUser(user);
-
-        const roleMap: { [key: string]: string } = {
-            'owner': 'Practice Owner',
-            'doctor': 'Doctor',
-            'patient': 'Patient',
-            'nurse': 'Nurse',
-            'pharmacy': 'Pharmacy Staff',
-            'assistant': 'Assistant'
-        };
-        setCurrentRole(roleMap[role] || 'Practice Owner');
-    }, []);
-
-    const handleLogout = () => {
-        localStorage.removeItem('currentUser');
-        localStorage.removeItem('currentRole');
-        router.push('/');
-    };
 
     const languages = [
         { code: 'en', name: 'English' },
@@ -39,6 +15,20 @@ export default function Header() {
         { code: 'te', name: 'తెలుగు' },
         { code: 'kn', name: 'ಕನ್ನಡ' }
     ];
+
+    // Get display name and role from JWT user
+    const displayName = user?.name || 'User';
+    const displayRole = user?.role || 'User';
+
+    const handleLogout = async () => {
+        // Clear old localStorage data
+        localStorage.removeItem('currentUser');
+        localStorage.removeItem('currentRole');
+        localStorage.removeItem('sidebarCollapsed');
+
+        // Call JWT logout
+        await logout();
+    };
 
     return (
         <header className="bg-white border-b border-gray-200 fixed top-0 left-0 right-0 z-50">
@@ -85,12 +75,12 @@ export default function Header() {
                         {/* User Info */}
                         <div className="flex items-center gap-3">
                             <div className="text-right">
-                                <div className="text-sm font-medium text-gray-900">{currentUser}</div>
-                                <div className="text-xs text-gray-500">{currentRole}</div>
+                                <div className="text-sm font-medium text-gray-900">{displayName}</div>
+                                <div className="text-xs text-gray-500">{displayRole}</div>
                             </div>
                             <div className="w-9 h-9 bg-gray-100 rounded-full flex items-center justify-center">
                                 <span className="text-sm font-semibold text-gray-600">
-                                    {currentUser.charAt(0).toUpperCase()}
+                                    {displayName.charAt(0).toUpperCase()}
                                 </span>
                             </div>
                         </div>
