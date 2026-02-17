@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 // src/app/api/appointments/requests/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
