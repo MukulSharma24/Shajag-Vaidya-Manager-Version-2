@@ -1,27 +1,31 @@
+// src/app/api/staff/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getUserFromToken, getTokenFromCookieString } from '@/lib/auth';
 import bcrypt from 'bcryptjs';
 
 // GET - Fetch all staff with filters
 export async function GET(req: NextRequest) {
     try {
+        const token = getTokenFromCookieString(req.headers.get('cookie'));
+        if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const payload = await getUserFromToken(token);
+        if (!payload?.clinicId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
         const { searchParams } = new URL(req.url);
         const role = searchParams.get('role');
         const status = searchParams.get('status');
         const search = searchParams.get('search');
         const page = parseInt(searchParams.get('page') || '1');
         const limit = parseInt(searchParams.get('limit') || '20');
-        const clinicId = searchParams.get('clinicId') || 'default-clinic';
+
+        // ✅ Always from JWT — ignore any clinicId from query params
+        const clinicId = payload.clinicId;
 
         const where: any = { clinicId };
 
-        if (role && role !== 'ALL') {
-            where.role = role;
-        }
-
-        if (status && status !== 'ALL') {
-            where.status = status;
-        }
+        if (role && role !== 'ALL') where.role = role;
+        if (status && status !== 'ALL') where.status = status;
 
         if (search) {
             where.OR = [
@@ -37,17 +41,9 @@ export async function GET(req: NextRequest) {
             prisma.staff.findMany({
                 where,
                 include: {
-                    user: {
-                        select: {
-                            id: true,
-                            email: true,
-                            name: true,
-                        },
-                    },
+                    user: { select: { id: true, email: true, name: true } },
                 },
-                orderBy: {
-                    createdAt: 'desc',
-                },
+                orderBy: { createdAt: 'desc' },
                 skip: (page - 1) * limit,
                 take: limit,
             }),
@@ -68,29 +64,15 @@ export async function GET(req: NextRequest) {
 
         const totalSalary = await prisma.staff.aggregate({
             where: { clinicId, status: 'ACTIVE' },
-            _sum: {
-                basicSalary: true,
-                allowances: true,
-            },
+            _sum: { basicSalary: true, allowances: true },
         });
 
         return NextResponse.json({
             staff,
-            pagination: {
-                total,
-                page,
-                limit,
-                pages: Math.ceil(total / limit),
-            },
+            pagination: { total, page, limit, pages: Math.ceil(total / limit) },
             stats: {
-                byStatus: stats.map(s => ({
-                    status: s.status,
-                    count: s._count,
-                })),
-                byRole: roleStats.map(r => ({
-                    role: r.role,
-                    count: r._count,
-                })),
+                byStatus: stats.map(s => ({ status: s.status, count: s._count })),
+                byRole: roleStats.map(r => ({ role: r.role, count: r._count })),
                 totalSalary: Number(totalSalary._sum.basicSalary || 0) + Number(totalSalary._sum.allowances || 0),
             },
         });
@@ -103,50 +85,30 @@ export async function GET(req: NextRequest) {
 // POST - Create new staff member
 export async function POST(req: NextRequest) {
     try {
+        const token = getTokenFromCookieString(req.headers.get('cookie'));
+        if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const payload = await getUserFromToken(token);
+        if (!payload?.clinicId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
         const body = await req.json();
         const {
-            firstName,
-            lastName,
-            email,
-            phone,
-            alternatePhone,
-            dateOfBirth,
-            gender,
-            bloodGroup,
-            addressLine1,
-            addressLine2,
-            city,
-            state,
-            pincode,
-            aadhaarNumber,
-            panNumber,
-            emergencyContactName,
-            emergencyContactPhone,
-            emergencyContactRelation,
-            role,
-            department,
-            designation,
-            joiningDate,
-            employmentType,
-            qualification,
-            specialization,
-            experienceYears,
-            licenseNumber,
-            licenseExpiry,
-            basicSalary,
-            allowances,
-            hra,
-            otherAllowances,
-            bankName,
-            accountNumber,
-            ifscCode,
-            accountHolderName,
-            canLogin = false,
-            userPassword,
-            clinicId,
+            firstName, lastName, email, phone, alternatePhone,
+            dateOfBirth, gender, bloodGroup,
+            addressLine1, addressLine2, city, state, pincode,
+            aadhaarNumber, panNumber,
+            emergencyContactName, emergencyContactPhone, emergencyContactRelation,
+            role, department, designation,
+            joiningDate, employmentType,
+            qualification, specialization, experienceYears,
+            licenseNumber, licenseExpiry,
+            basicSalary, allowances, hra, otherAllowances,
+            bankName, accountNumber, ifscCode, accountHolderName,
+            canLogin = false, userPassword,
         } = body;
 
-        // ✅ FIXED: Validate all required fields with clear error messages
+        // ✅ clinicId always from JWT
+        const clinicId = payload.clinicId;
+
         const missingFields = [];
         if (!firstName) missingFields.push('firstName');
         if (!lastName) missingFields.push('lastName');
@@ -163,7 +125,6 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // ✅ FIXED: If canLogin is true, password is required
         if (canLogin && (!userPassword || userPassword.length < 6)) {
             return NextResponse.json(
                 { error: 'Password must be at least 6 characters when login is enabled' },
@@ -171,11 +132,8 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // ✅ FIXED: Use a safe clinicId fallback
-        const resolvedClinicId = clinicId || 'default-clinic';
-
         const existingStaffEmail = await prisma.staff.findFirst({
-            where: { email: email.toLowerCase().trim(), clinicId: resolvedClinicId },
+            where: { email: email.toLowerCase().trim(), clinicId },
         });
 
         if (existingStaffEmail) {
@@ -186,37 +144,31 @@ export async function POST(req: NextRequest) {
         }
 
         const lastStaff = await prisma.staff.findFirst({
-            where: { clinicId: resolvedClinicId },
+            where: { clinicId },
             orderBy: { createdAt: 'desc' },
             select: { employeeId: true },
         });
 
         const employeeId = generateEmployeeId(lastStaff?.employeeId, role);
 
-        // ✅ FIXED: Properly create user with hashed password when canLogin is true
         let userId = null;
         if (canLogin && userPassword) {
             const normalizedEmail = email.toLowerCase().trim();
-
-            const existingUser = await prisma.user.findUnique({
-                where: { email: normalizedEmail }
-            });
+            const existingUser = await prisma.user.findUnique({ where: { email: normalizedEmail } });
 
             if (existingUser) {
-                // Link to existing user account
                 userId = existingUser.id;
             } else {
-                // ✅ FIXED: Hash password before storing
                 const hashedPassword = await bcrypt.hash(userPassword, 10);
                 const userRole = role === 'DOCTOR' ? 'DOCTOR' : 'STAFF';
-
                 const user = await prisma.user.create({
                     data: {
                         email: normalizedEmail,
                         name: `${firstName} ${lastName}`.trim(),
-                        password: hashedPassword,  // ✅ was missing before
+                        password: hashedPassword,
                         role: userRole,
                         isActive: true,
+                        clinicId, // ✅ New user also gets clinicId
                     },
                 });
                 userId = user.id;
@@ -226,31 +178,18 @@ export async function POST(req: NextRequest) {
         const staff = await prisma.staff.create({
             data: {
                 employeeId,
-                firstName,
-                lastName,
+                firstName, lastName,
                 email: email.toLowerCase().trim(),
-                phone,
-                alternatePhone,
+                phone, alternatePhone,
                 dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
-                gender,
-                bloodGroup,
-                addressLine1,
-                addressLine2,
-                city,
-                state,
-                pincode,
-                aadhaarNumber,
-                panNumber,
-                emergencyContactName,
-                emergencyContactPhone,
-                emergencyContactRelation,
-                role,
-                department,
-                designation,
+                gender, bloodGroup,
+                addressLine1, addressLine2, city, state, pincode,
+                aadhaarNumber, panNumber,
+                emergencyContactName, emergencyContactPhone, emergencyContactRelation,
+                role, department, designation,
                 joiningDate: new Date(joiningDate),
                 employmentType,
-                qualification,
-                specialization,
+                qualification, specialization,
                 experienceYears: parseInt(experienceYears?.toString()) || 0,
                 licenseNumber,
                 licenseExpiry: licenseExpiry ? new Date(licenseExpiry) : null,
@@ -258,34 +197,20 @@ export async function POST(req: NextRequest) {
                 allowances: parseFloat(allowances?.toString()) || 0,
                 hra: parseFloat(hra?.toString()) || 0,
                 otherAllowances: parseFloat(otherAllowances?.toString()) || 0,
-                bankName,
-                accountNumber,
-                ifscCode,
-                accountHolderName,
+                bankName, accountNumber, ifscCode, accountHolderName,
                 userId,
                 canLogin: canLogin && !!userId,
                 status: 'ACTIVE',
-                clinicId: resolvedClinicId,
+                clinicId, // ✅ Always from JWT
             },
             include: {
-                user: {
-                    select: {
-                        id: true,
-                        email: true,
-                        name: true,
-                    },
-                },
+                user: { select: { id: true, email: true, name: true } },
             },
         });
 
-        // Create initial leave balance for current year
         const currentYear = new Date().getFullYear();
         await prisma.leaveBalance.create({
-            data: {
-                staffId: staff.id,
-                year: currentYear,
-                clinicId: resolvedClinicId,
-            },
+            data: { staffId: staff.id, year: currentYear, clinicId },
         });
 
         return NextResponse.json({ staff }, { status: 201 });
@@ -293,7 +218,7 @@ export async function POST(req: NextRequest) {
         console.error('Error creating staff:', error);
         return NextResponse.json({
             error: 'Failed to create staff member',
-            details: error instanceof Error ? error.message : 'Unknown error'
+            details: error instanceof Error ? error.message : 'Unknown error',
         }, { status: 500 });
     }
 }
@@ -301,81 +226,56 @@ export async function POST(req: NextRequest) {
 // DELETE - Remove staff member
 export async function DELETE(req: NextRequest) {
     try {
+        const token = getTokenFromCookieString(req.headers.get('cookie'));
+        if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const payload = await getUserFromToken(token);
+        if (!payload?.clinicId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
         const { searchParams } = new URL(req.url);
         const id = searchParams.get('id');
 
-        if (!id) {
-            return NextResponse.json(
-                { error: 'Staff ID is required' },
-                { status: 400 }
-            );
-        }
+        if (!id) return NextResponse.json({ error: 'Staff ID is required' }, { status: 400 });
 
-        const staff = await prisma.staff.findUnique({
-            where: { id },
-            include: { user: true }
+        // ✅ Verify staff belongs to this clinic before deleting
+        const staff = await prisma.staff.findFirst({
+            where: { id, clinicId: payload.clinicId },
+            include: { user: true },
         });
 
-        if (!staff) {
-            return NextResponse.json(
-                { error: 'Staff not found' },
-                { status: 404 }
-            );
-        }
+        if (!staff) return NextResponse.json({ error: 'Staff not found' }, { status: 404 });
 
-        // Delete related records first
         await prisma.staffAttendance.deleteMany({ where: { staffId: id } });
         await prisma.staffLeave.deleteMany({ where: { staffId: id } });
         await prisma.leaveBalance.deleteMany({ where: { staffId: id } });
         await prisma.payroll.deleteMany({ where: { staffId: id } });
         await prisma.staffPerformance.deleteMany({ where: { staffId: id } });
         await prisma.staffDocument.deleteMany({ where: { staffId: id } });
-
         await prisma.staff.delete({ where: { id } });
 
         if (staff.userId) {
-            const userStaffCount = await prisma.staff.count({
-                where: { userId: staff.userId }
-            });
-
+            const userStaffCount = await prisma.staff.count({ where: { userId: staff.userId } });
             if (userStaffCount === 0) {
                 await prisma.user.delete({ where: { id: staff.userId } });
             }
         }
 
-        return NextResponse.json({
-            message: 'Staff deleted successfully'
-        });
+        return NextResponse.json({ message: 'Staff deleted successfully' });
     } catch (error) {
         console.error('Error deleting staff:', error);
-        return NextResponse.json(
-            { error: 'Failed to delete staff' },
-            { status: 500 }
-        );
+        return NextResponse.json({ error: 'Failed to delete staff' }, { status: 500 });
     }
 }
 
 function generateEmployeeId(lastEmployeeId?: string, role?: string): string {
     const rolePrefix: Record<string, string> = {
-        DOCTOR: 'DOC',
-        RECEPTIONIST: 'REC',
-        THERAPIST: 'THR',
-        PHARMACIST: 'PHR',
-        LAB_TECHNICIAN: 'LAB',
-        NURSE: 'NUR',
-        MANAGER: 'MGR',
-        OTHER: 'EMP',
+        DOCTOR: 'DOC', RECEPTIONIST: 'REC', THERAPIST: 'THR',
+        PHARMACIST: 'PHR', LAB_TECHNICIAN: 'LAB', NURSE: 'NUR',
+        MANAGER: 'MGR', OTHER: 'EMP',
     };
-
     const prefix = role ? rolePrefix[role] || 'EMP' : 'EMP';
     const year = new Date().getFullYear().toString().slice(-2);
-
-    if (!lastEmployeeId) {
-        return `${prefix}${year}0001`;
-    }
-
+    if (!lastEmployeeId) return `${prefix}${year}0001`;
     const lastNumber = parseInt(lastEmployeeId.slice(-4)) || 0;
     const newNumber = (lastNumber + 1).toString().padStart(4, '0');
-
     return `${prefix}${year}${newNumber}`;
 }

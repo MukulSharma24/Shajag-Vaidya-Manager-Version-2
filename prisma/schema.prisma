@@ -22,6 +22,8 @@ model Clinic {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // ✅ ADDED: users relation for multi-tenancy
+  users                User[]
   patients             Patient[]
   appointments         Appointment[]
   medicines            Medicine[]
@@ -45,6 +47,8 @@ model Clinic {
   staffPerformance     StaffPerformance[]
   quickIncome          QuickIncome[]
   paymentConfirmations PaymentConfirmation[]
+  // ✅ ADDED: billingItems relation for multi-tenancy
+  billingItems         BillingItem[]
 
   @@map("clinics")
 }
@@ -63,6 +67,10 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
 
+  // ✅ ADDED: clinicId for multi-tenancy — ties every user to a clinic
+  clinicId String?
+  clinic   Clinic? @relation(fields: [clinicId], references: [id], onDelete: SetNull)
+
   billedBills      Bill[]    @relation("BilledBy")
   finalizedBills   Bill[]    @relation("FinalizedBy")
   paymentsReceived Payment[] @relation("ReceivedBy")
@@ -76,6 +84,8 @@ model User {
   payrollPaid      Payroll[]         @relation("PaidBy")
 
   patient Patient?
+
+  @@index([clinicId])
 }
 
 model Patient {
@@ -501,7 +511,9 @@ model BillingItem {
   taxPercentage Decimal  @default(0) @db.Decimal(5, 2)
   category      String?  @db.VarChar(100)
   isActive      Boolean  @default(true)
+  // ✅ FIXED: Added proper Clinic relation (was missing @relation before)
   clinicId      String
+  clinic        Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -692,8 +704,9 @@ model QuickIncome {
   category     String   @default("DIRECT_PAYMENT")
   receivedDate DateTime @default(now())
 
-  clinicId   String?
-  clinic     Clinic? @relation(fields: [clinicId], references: [id], onDelete: SetNull)
+  // ✅ FIXED: clinicId is now required (non-nullable) for proper multi-tenancy
+  clinicId   String
+  clinic     Clinic  @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   recordedBy String?
 
   createdAt DateTime @default(now())
@@ -726,8 +739,9 @@ model PaymentConfirmation {
   verifiedAt      DateTime?
   rejectionReason String?   @db.Text
 
-  clinicId String?
-  clinic   Clinic? @relation(fields: [clinicId], references: [id], onDelete: SetNull)
+  // ✅ FIXED: clinicId is now required (non-nullable) for proper multi-tenancy
+  clinicId String
+  clinic   Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

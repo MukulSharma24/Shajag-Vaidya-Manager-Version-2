@@ -1,18 +1,19 @@
 // src/app/api/prescriptions/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
+import { getUserFromToken, getTokenFromCookieString } from '@/lib/auth';
 
 // ============================================
 // GET /api/prescriptions
-// List all prescriptions with filters
 // ============================================
 export async function GET(request: NextRequest) {
     try {
-        const { searchParams } = new URL(request.url);
+        const token = getTokenFromCookieString(request.headers.get('cookie'));
+        if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const payload = await getUserFromToken(token);
+        if (!payload?.clinicId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-        // Query parameters
+        const { searchParams } = new URL(request.url);
         const patientId = searchParams.get('patientId');
         const status = searchParams.get('status');
         const search = searchParams.get('search');
@@ -21,16 +22,14 @@ export async function GET(request: NextRequest) {
         const page = parseInt(searchParams.get('page') || '1');
         const limit = parseInt(searchParams.get('limit') || '50');
 
-        // Build where clause
-        const where: any = {};
+        // ✅ Always scoped to clinic
+        const where: any = {
+            clinicId: payload.clinicId,
+        };
 
-        if (patientId) {
-            where.patientId = patientId;
-        }
+        if (patientId) where.patientId = patientId;
 
-        if (status && status !== 'all') {
-            where.status = status;
-        }
+        if (status && status !== 'all') where.status = status;
 
         if (search) {
             where.OR = [
@@ -46,7 +45,6 @@ export async function GET(request: NextRequest) {
             if (endDate) where.createdAt.lte = new Date(endDate);
         }
 
-        // Fetch prescriptions with relations
         const prescriptions = await prisma.prescription.findMany({
             where,
             include: {
@@ -71,19 +69,14 @@ export async function GET(request: NextRequest) {
                             },
                         },
                     },
-                    orderBy: {
-                        orderIndex: 'asc',
-                    },
+                    orderBy: { orderIndex: 'asc' },
                 },
             },
-            orderBy: {
-                createdAt: 'desc',
-            },
+            orderBy: { createdAt: 'desc' },
             skip: (page - 1) * limit,
             take: limit,
         });
 
-        // Get total count for pagination
         const total = await prisma.prescription.count({ where });
 
         return NextResponse.json({
@@ -98,19 +91,20 @@ export async function GET(request: NextRequest) {
 
     } catch (error) {
         console.error('Error fetching prescriptions:', error);
-        return NextResponse.json(
-            { error: 'Failed to fetch prescriptions' },
-            { status: 500 }
-        );
+        return NextResponse.json({ error: 'Failed to fetch prescriptions' }, { status: 500 });
     }
 }
 
 // ============================================
 // POST /api/prescriptions
-// Create new prescription
 // ============================================
 export async function POST(request: NextRequest) {
     try {
+        const token = getTokenFromCookieString(request.headers.get('cookie'));
+        if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const payload = await getUserFromToken(token);
+        if (!payload?.clinicId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
         const body = await request.json();
 
         const {
@@ -129,7 +123,6 @@ export async function POST(request: NextRequest) {
             createdBy,
         } = body;
 
-        // Validate required fields
         if (!patientId || !chiefComplaints) {
             return NextResponse.json(
                 { error: 'Patient and chief complaints are required' },
@@ -139,10 +132,9 @@ export async function POST(request: NextRequest) {
 
         console.log('📝 Creating prescription for patient:', patientId);
 
-        // ✅ Create prescription - Let Prisma auto-increment prescriptionNo
         const prescription = await prisma.prescription.create({
             data: {
-                // ✅ NO prescriptionNo - Prisma auto-increments
+                clinicId: payload.clinicId, // ✅ Always from JWT
                 patientId,
                 appointmentId: appointmentId || undefined,
                 chiefComplaints,
@@ -183,9 +175,7 @@ export async function POST(request: NextRequest) {
             include: {
                 patient: true,
                 medicines: {
-                    include: {
-                        medicine: true,
-                    },
+                    include: { medicine: true },
                 },
             },
         });
@@ -200,7 +190,7 @@ export async function POST(request: NextRequest) {
             {
                 error: 'Failed to create prescription',
                 message: error.message,
-                details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+                details: process.env.NODE_ENV === 'development' ? error.stack : undefined,
             },
             { status: 500 }
         );

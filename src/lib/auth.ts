@@ -26,6 +26,7 @@ export interface JWTPayload {
     email: string;
     name: string;
     role: string;
+    clinicId?: string; // ✅ ADDED: clinicId for multi-tenancy scoping in API routes
     patientId?: string; // Include patientId in JWT for patient users
 }
 
@@ -81,6 +82,8 @@ export async function verifyJWT(token: string): Promise<JWTPayload | null> {
                 email: payload.email,
                 name: payload.name,
                 role: payload.role,
+                // ✅ ADDED: extract clinicId from token if present
+                clinicId: typeof payload.clinicId === 'string' ? payload.clinicId : undefined,
                 patientId: typeof payload.patientId === 'string' ? payload.patientId : undefined,
             };
         }

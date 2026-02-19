@@ -65,15 +65,28 @@ export async function middleware(request: NextRequest) {
     const token = getTokenFromCookieString(cookieHeader);
 
     // Handle public routes
+    // Handle public routes
     if (isPublicRoute) {
-        // Redirect logged-in users away from login/register
-        if ((pathname === '/login' || pathname === '/register') && token) {
+        // If user explicitly visits /login, always clear the cookie and let them log in fresh
+        // This prevents a previous user's session from auto-redirecting a new person (privacy fix)
+        if (pathname === '/login') {
+            if (token) {
+                const response = NextResponse.next();
+                response.cookies.delete('auth-token');
+                return response;
+            }
+            return NextResponse.next();
+        }
+
+        // For /register and other public routes, redirect if already logged in
+        if (pathname === '/register' && token) {
             const payload = await verifyJWTEdge(token);
             if (payload) {
                 const redirectPath = payload.role === 'PATIENT' ? '/patient-portal' : '/dashboard';
                 return NextResponse.redirect(new URL(redirectPath, request.url));
             }
         }
+
         return NextResponse.next();
     }
 

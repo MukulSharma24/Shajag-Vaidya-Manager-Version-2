@@ -1,31 +1,34 @@
 // src/app/api/appointments/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
+import { getUserFromToken, getTokenFromCookieString } from '@/lib/auth';
 
 // ============================================
 // GET /api/appointments
-// List all appointments with filters
 // ============================================
 export async function GET(request: NextRequest) {
     try {
-        const { searchParams } = new URL(request.url);
+        const token = getTokenFromCookieString(request.headers.get('cookie'));
+        if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const payload = await getUserFromToken(token);
+        if (!payload?.clinicId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+        const { searchParams } = new URL(request.url);
         const startDate = searchParams.get('startDate');
         const endDate = searchParams.get('endDate');
         const status = searchParams.get('status');
 
-        const where: any = {};
+        // ✅ Always scoped to clinic
+        const where: any = {
+            clinicId: payload.clinicId,
+        };
 
-        // Filter by date range
         if (startDate || endDate) {
             where.appointmentDate = {};
             if (startDate) where.appointmentDate.gte = new Date(startDate);
             if (endDate) where.appointmentDate.lt = new Date(endDate);
         }
 
-        // Filter by status
         if (status) {
             where.status = status;
         }
@@ -61,23 +64,25 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ appointments });
     } catch (error) {
         console.error('❌ Error fetching appointments:', error);
-        return NextResponse.json(
-            { error: 'Failed to fetch appointments' },
-            { status: 500 }
-        );
+        return NextResponse.json({ error: 'Failed to fetch appointments' }, { status: 500 });
     }
 }
 
 // ============================================
 // POST /api/appointments
-// Create new appointment
 // ============================================
 export async function POST(request: NextRequest) {
     try {
+        const token = getTokenFromCookieString(request.headers.get('cookie'));
+        if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const payload = await getUserFromToken(token);
+        if (!payload?.clinicId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
         const body = await request.json();
 
         const appointment = await prisma.appointment.create({
             data: {
+                clinicId: payload.clinicId, // ✅ Always from JWT
                 patientId: body.patientId || null,
                 guestName: body.guestName || null,
                 guestPhone: body.guestPhone || null,
@@ -104,9 +109,6 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(appointment, { status: 201 });
     } catch (error) {
         console.error('Error creating appointment:', error);
-        return NextResponse.json(
-            { error: 'Failed to create appointment' },
-            { status: 500 }
-        );
+        return NextResponse.json({ error: 'Failed to create appointment' }, { status: 500 });
     }
 }

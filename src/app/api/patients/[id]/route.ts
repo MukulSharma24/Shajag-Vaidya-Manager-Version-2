@@ -1,17 +1,26 @@
 // src/app/api/patients/[id]/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
+import { getUserFromToken, getTokenFromCookieString } from '@/lib/auth';
 
-const prisma = new PrismaClient();
-
-// GET single patient
+// ============================================
+// GET single patient — scoped to clinic
+// ============================================
 export async function GET(
     request: NextRequest,
     { params }: { params: { id: string } }
 ) {
     try {
-        const patient = await prisma.patient.findUnique({
-            where: { id: params.id },
+        const token = getTokenFromCookieString(request.headers.get('cookie'));
+        if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const payload = await getUserFromToken(token);
+        if (!payload?.clinicId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+        const patient = await prisma.patient.findFirst({
+            where: {
+                id: params.id,
+                clinicId: payload.clinicId, // ✅ Ensures patient belongs to this clinic
+            },
             include: {
                 appointments: {
                     orderBy: { appointmentDate: 'desc' },
@@ -25,38 +34,46 @@ export async function GET(
         });
 
         if (!patient) {
-            return NextResponse.json(
-                { error: 'Patient not found' },
-                { status: 404 }
-            );
+            return NextResponse.json({ error: 'Patient not found' }, { status: 404 });
         }
 
         return NextResponse.json(patient);
     } catch (error) {
         console.error('Error fetching patient:', error);
-        return NextResponse.json(
-            { error: 'Failed to fetch patient' },
-            { status: 500 }
-        );
+        return NextResponse.json({ error: 'Failed to fetch patient' }, { status: 500 });
     }
 }
 
-// UPDATE patient
+// ============================================
+// PATCH — Update patient
+// ============================================
 export async function PATCH(
     request: NextRequest,
     { params }: { params: { id: string } }
 ) {
     try {
+        const token = getTokenFromCookieString(request.headers.get('cookie'));
+        if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const payload = await getUserFromToken(token);
+        if (!payload?.clinicId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
         const body = await request.json();
 
-        // Check if phone number already exists (for another patient)
+        // ✅ Verify patient belongs to this clinic before updating
+        const existing = await prisma.patient.findFirst({
+            where: { id: params.id, clinicId: payload.clinicId },
+        });
+        if (!existing) {
+            return NextResponse.json({ error: 'Patient not found' }, { status: 404 });
+        }
+
+        // Check if phone number already exists for another patient in same clinic
         if (body.phoneNumber) {
             const existingPatient = await prisma.patient.findFirst({
                 where: {
                     phoneNumber: body.phoneNumber,
-                    NOT: {
-                        id: params.id
-                    }
+                    clinicId: payload.clinicId, // ✅ Scoped to clinic
+                    NOT: { id: params.id },
                 },
             });
 
@@ -68,7 +85,6 @@ export async function PATCH(
             }
         }
 
-        // Build update data object dynamically
         const updateData: any = {};
 
         if (body.fullName !== undefined) updateData.fullName = body.fullName;
@@ -95,29 +111,36 @@ export async function PATCH(
         return NextResponse.json(patient);
     } catch (error) {
         console.error('Error updating patient:', error);
-        return NextResponse.json(
-            { error: 'Failed to update patient' },
-            { status: 500 }
-        );
+        return NextResponse.json({ error: 'Failed to update patient' }, { status: 500 });
     }
 }
 
+// ============================================
 // DELETE patient
+// ============================================
 export async function DELETE(
     request: NextRequest,
     { params }: { params: { id: string } }
 ) {
     try {
-        await prisma.patient.delete({
-            where: { id: params.id },
+        const token = getTokenFromCookieString(request.headers.get('cookie'));
+        if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const payload = await getUserFromToken(token);
+        if (!payload?.clinicId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+        // ✅ Verify patient belongs to this clinic before deleting
+        const existing = await prisma.patient.findFirst({
+            where: { id: params.id, clinicId: payload.clinicId },
         });
+        if (!existing) {
+            return NextResponse.json({ error: 'Patient not found' }, { status: 404 });
+        }
+
+        await prisma.patient.delete({ where: { id: params.id } });
 
         return NextResponse.json({ success: true });
     } catch (error) {
         console.error('Error deleting patient:', error);
-        return NextResponse.json(
-            { error: 'Failed to delete patient' },
-            { status: 500 }
-        );
+        return NextResponse.json({ error: 'Failed to delete patient' }, { status: 500 });
     }
 }

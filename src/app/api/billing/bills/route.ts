@@ -1,9 +1,16 @@
+// src/app/api/billing/bills/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getUserFromToken, getTokenFromCookieString } from '@/lib/auth';
 
 // GET - Fetch all bills with filters
 export async function GET(req: NextRequest) {
     try {
+        const token = getTokenFromCookieString(req.headers.get('cookie'));
+        if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const payload = await getUserFromToken(token);
+        if (!payload?.clinicId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
         const { searchParams } = new URL(req.url);
         const status = searchParams.get('status');
         const patientId = searchParams.get('patientId');
@@ -12,7 +19,8 @@ export async function GET(req: NextRequest) {
         const page = parseInt(searchParams.get('page') || '1');
         const limit = parseInt(searchParams.get('limit') || '20');
 
-        const where: any = {};
+        // ✅ Always scoped to clinic
+        const where: any = { clinicId: payload.clinicId };
 
         if (status && status !== 'ALL') where.status = status;
         if (patientId) where.patientId = patientId;
@@ -38,8 +46,9 @@ export async function GET(req: NextRequest) {
             prisma.bill.count({ where }),
         ]);
 
+        // ✅ Stats also scoped to clinic
         const stats = await prisma.bill.aggregate({
-            where: {},
+            where: { clinicId: payload.clinicId },
             _sum: { totalAmount: true, paidAmount: true, balanceAmount: true },
             _count: true,
         });
@@ -60,38 +69,14 @@ export async function GET(req: NextRequest) {
     }
 }
 
-// Helper: Get or create default clinic
-async function getOrCreateDefaultClinic(): Promise<string> {
-    try {
-        // Try to find any existing clinic
-        let clinic = await prisma.clinic.findFirst();
-
-        if (!clinic) {
-            console.log('📝 No clinic found, creating default clinic...');
-            // Create a default clinic
-            clinic = await prisma.clinic.create({
-                data: {
-                    name: 'Default Clinic',
-                    address: 'Not specified',
-                    phone: 'Not specified',
-                    email: 'clinic@example.com',
-                },
-            });
-            console.log('✅ Default clinic created:', clinic.id);
-        } else {
-            console.log('✅ Using existing clinic:', clinic.id, clinic.name);
-        }
-
-        return clinic.id;
-    } catch (error) {
-        console.error('❌ Error getting/creating clinic:', error);
-        throw new Error('Failed to get or create clinic');
-    }
-}
-
 // POST - Create new bill
 export async function POST(req: NextRequest) {
     try {
+        const token = getTokenFromCookieString(req.headers.get('cookie'));
+        if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const payload = await getUserFromToken(token);
+        if (!payload?.clinicId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
         const body = await req.json();
         console.log('📥 Received bill creation request');
 
@@ -99,7 +84,6 @@ export async function POST(req: NextRequest) {
             patientId,
             prescriptionId,
             appointmentId,
-            clinicId: providedClinicId,
             billedBy,
             items,
             billItems,
@@ -112,38 +96,26 @@ export async function POST(req: NextRequest) {
         const itemsArray = billItems || items;
 
         if (!itemsArray || !Array.isArray(itemsArray) || itemsArray.length === 0) {
-            console.error('❌ Validation error: billItems missing');
-            return NextResponse.json(
-                { error: 'Bill items are required' },
-                { status: 400 }
-            );
+            return NextResponse.json({ error: 'Bill items are required' }, { status: 400 });
         }
 
         if (!patientId) {
-            console.error('❌ Validation error: patientId missing');
-            return NextResponse.json(
-                { error: 'Patient ID is required' },
-                { status: 400 }
-            );
+            return NextResponse.json({ error: 'Patient ID is required' }, { status: 400 });
         }
 
-        const patient = await prisma.patient.findUnique({
-            where: { id: patientId },
+        // ✅ Verify patient belongs to this clinic
+        const patient = await prisma.patient.findFirst({
+            where: { id: patientId, clinicId: payload.clinicId },
         });
 
         if (!patient) {
-            console.error('❌ Patient not found:', patientId);
-            return NextResponse.json(
-                { error: 'Patient not found' },
-                { status: 404 }
-            );
+            return NextResponse.json({ error: 'Patient not found' }, { status: 404 });
         }
 
         console.log('✅ Patient found:', patient.fullName);
 
-        // Get or create clinic
-        const clinicId = providedClinicId || await getOrCreateDefaultClinic();
-        console.log('🏥 Using clinic ID:', clinicId);
+        // ✅ clinicId always from JWT — never from request body
+        const clinicId = payload.clinicId;
 
         const lastBill = await prisma.bill.findFirst({
             where: { clinicId },
@@ -178,12 +150,10 @@ export async function POST(req: NextRequest) {
         const taxAmount = processedItems.reduce((sum: number, item: any) => sum + item.taxAmount, 0);
         const totalAmount = subtotal + taxAmount - finalDiscountAmount;
 
-        console.log('💰 Calculations:', { subtotal, taxAmount, discount: finalDiscountAmount, total: totalAmount });
-
         const billData: any = {
             billNumber,
             patientId,
-            clinicId, // ✅ Always provided now
+            clinicId, // ✅ Always from JWT
             subtotal,
             discountAmount: finalDiscountAmount,
             discountPercentage,
@@ -193,33 +163,20 @@ export async function POST(req: NextRequest) {
             paidAmount: 0,
             status,
             notes: notes || '',
-            billItems: {
-                create: processedItems,
-            },
+            billItems: { create: processedItems },
         };
 
         if (prescriptionId) billData.prescriptionId = prescriptionId;
         if (appointmentId) billData.appointmentId = appointmentId;
         if (billedBy) billData.billedBy = billedBy;
 
-        console.log('💾 Creating bill...');
+        const bill = await prisma.bill.create({ data: billData });
 
-        const bill = await prisma.bill.create({
-            data: billData,
-        });
-
-        console.log('✅ Bill created! ID:', bill.id);
-
-        // Fetch complete bill with relations
         const completeBill = await prisma.bill.findUnique({
             where: { id: bill.id },
-            include: {
-                billItems: true,
-                patient: true,
-            },
+            include: { billItems: true, patient: true },
         });
 
-        // Create ledger entry
         try {
             await createLedgerEntry({
                 patientId,
@@ -230,7 +187,6 @@ export async function POST(req: NextRequest) {
                 debitAmount: totalAmount,
                 description: `Bill ${billNumber} created`,
             });
-            console.log('✅ Ledger entry created');
         } catch (ledgerError) {
             console.error('⚠️ Ledger failed (non-critical):', ledgerError);
         }
@@ -254,9 +210,7 @@ function generateBillNumber(lastBillNumber?: string): string {
     const year = date.getFullYear().toString().slice(-2);
     const month = (date.getMonth() + 1).toString().padStart(2, '0');
 
-    if (!lastBillNumber) {
-        return `${prefix}${year}${month}-0001`;
-    }
+    if (!lastBillNumber) return `${prefix}${year}${month}-0001`;
 
     const parts = lastBillNumber.split('-');
     const lastNumber = parseInt(parts[1] || '0');

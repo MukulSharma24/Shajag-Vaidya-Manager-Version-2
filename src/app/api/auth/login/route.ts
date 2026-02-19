@@ -19,8 +19,8 @@ export async function POST(request: NextRequest) {
         const user = await prisma.user.findUnique({
             where: { email: email.toLowerCase().trim() },
             include: {
-                patient: { select: { id: true } },
-                staff: { select: { id: true, employeeId: true } },
+                patient: { select: { id: true, clinicId: true } },
+                staff: { select: { id: true, employeeId: true, clinicId: true } },
             },
         });
 
@@ -49,13 +49,22 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // ── Create JWT with patientId for patient users ──
-        // This is CRITICAL for patient data isolation
+        // ── Resolve clinicId ──
+        // Priority: user.clinicId (direct) → staff.clinicId → patient.clinicId
+        const clinicId =
+            user.clinicId ??
+            user.staff?.clinicId ??
+            user.patient?.clinicId ??
+            undefined;
+
+        // ── Create JWT with clinicId and patientId for proper data scoping ──
         const token = await signJWT({
             userId: user.id,
             email: user.email,
             name: user.name,
             role: user.role,
+            // ✅ ADDED: clinicId so every API route can scope queries without extra DB lookup
+            clinicId,
             // Include patientId in JWT so patient APIs can filter data
             patientId: user.patient?.id,
         });
@@ -66,6 +75,7 @@ export async function POST(request: NextRequest) {
             email: user.email,
             name: user.name,
             role: user.role,
+            clinicId: clinicId ?? null,
             patientId: user.patient?.id ?? null,
             staffId: user.staff?.id ?? null,
             employeeId: user.staff?.employeeId ?? null,

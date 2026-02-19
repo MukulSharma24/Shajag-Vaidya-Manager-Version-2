@@ -1,22 +1,25 @@
 // src/app/api/medicines/route.ts
-
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
+import { getUserFromToken, getTokenFromCookieString } from '@/lib/auth';
 
 // GET: Fetch all medicines with filters
 export async function GET(request: NextRequest) {
     try {
+        const token = getTokenFromCookieString(request.headers.get('cookie'));
+        if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const payload = await getUserFromToken(token);
+        if (!payload?.clinicId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
         const searchParams = request.nextUrl.searchParams;
         const search = searchParams.get('search') || '';
         const type = searchParams.get('type') || '';
         const categoryId = searchParams.get('categoryId') || '';
-        const stockStatus = searchParams.get('stockStatus') || 'all'; // all, low, out
+        const stockStatus = searchParams.get('stockStatus') || 'all';
 
-        const where: any = {};
+        // ✅ Always scoped to clinic
+        const where: any = { clinicId: payload.clinicId };
 
-        // Search filter
         if (search) {
             where.OR = [
                 { name: { contains: search, mode: 'insensitive' } },
@@ -25,36 +28,20 @@ export async function GET(request: NextRequest) {
             ];
         }
 
-        // Type filter
-        if (type) {
-            where.type = type;
-        }
+        if (type) where.type = type;
 
-        // Category filter
         if (categoryId) {
-            where.categories = {
-                some: {
-                    categoryId: categoryId,
-                },
-            };
+            where.categories = { some: { categoryId } };
         }
 
-        // Fetch medicines
         let medicines = await prisma.medicine.findMany({
             where,
             include: {
-                categories: {
-                    include: {
-                        category: true,
-                    },
-                },
+                categories: { include: { category: true } },
             },
-            orderBy: {
-                name: 'asc',
-            },
+            orderBy: { name: 'asc' },
         });
 
-        // Stock status filter (applied after fetching)
         if (stockStatus === 'low') {
             medicines = medicines.filter(m => m.currentStock > 0 && m.currentStock <= m.reorderLevel);
         } else if (stockStatus === 'out') {
@@ -68,35 +55,26 @@ export async function GET(request: NextRequest) {
     }
 }
 
-// POST: Create new medicine
+// POST: Create single medicine
 export async function POST(request: NextRequest) {
     try {
+        const token = getTokenFromCookieString(request.headers.get('cookie'));
+        if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const payload = await getUserFromToken(token);
+        if (!payload?.clinicId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
         const body = await request.json();
         const {
-            name,
-            genericName,
-            manufacturer,
-            type,
-            strength,
-            unit,
-            description,
-            currentStock,
-            reorderLevel,
-            purchasePrice,
-            sellingPrice,
-            mrp,
-            batchNumber,
-            expiryDate,
-            barcode,
-            categoryIds, // Array of category IDs
+            name, genericName, manufacturer, type, strength, unit, description,
+            currentStock, reorderLevel, purchasePrice, sellingPrice, mrp,
+            batchNumber, expiryDate, barcode, categoryIds,
         } = body;
 
-        // ✅ FIX: Handle empty barcode - set to null instead of empty string
         const barcodeValue = barcode && barcode.trim() !== '' ? barcode.trim() : null;
 
-        // Create medicine
         const medicine = await prisma.medicine.create({
             data: {
+                clinicId: payload.clinicId, // ✅ Always from JWT
                 name,
                 genericName: genericName || null,
                 manufacturer: manufacturer || null,
@@ -111,11 +89,10 @@ export async function POST(request: NextRequest) {
                 mrp: parseFloat(mrp) || 0,
                 batchNumber: batchNumber || null,
                 expiryDate: expiryDate ? new Date(expiryDate) : null,
-                barcode: barcodeValue, // ✅ Now properly handles empty barcodes
+                barcode: barcodeValue,
             },
         });
 
-        // Add categories
         if (categoryIds && categoryIds.length > 0) {
             await prisma.medicineCategory.createMany({
                 data: categoryIds.map((categoryId: string) => ({
@@ -125,10 +102,10 @@ export async function POST(request: NextRequest) {
             });
         }
 
-        // Create initial stock transaction
         if (currentStock > 0) {
             await prisma.stockTransaction.create({
                 data: {
+                    clinicId: payload.clinicId, // ✅ Always from JWT
                     medicineId: medicine.id,
                     type: 'IN',
                     quantity: parseInt(currentStock),
@@ -142,7 +119,6 @@ export async function POST(request: NextRequest) {
     } catch (error: any) {
         console.error('Error creating medicine:', error);
 
-        // ✅ Better error handling for duplicate entries
         if (error.code === 'P2002') {
             const field = error.meta?.target?.[0] || 'field';
             return NextResponse.json(
