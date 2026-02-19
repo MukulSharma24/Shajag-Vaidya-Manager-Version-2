@@ -1,9 +1,7 @@
-// src/app/api/medicines/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getUserFromToken, getTokenFromCookieString } from '@/lib/auth';
 
-// GET: Fetch all medicines with filters
 export async function GET(request: NextRequest) {
     try {
         const token = getTokenFromCookieString(request.headers.get('cookie'));
@@ -17,9 +15,7 @@ export async function GET(request: NextRequest) {
         const categoryId = searchParams.get('categoryId') || '';
         const stockStatus = searchParams.get('stockStatus') || 'all';
 
-        // ✅ Always scoped to clinic
         const where: any = { clinicId: payload.clinicId };
-
         if (search) {
             where.OR = [
                 { name: { contains: search, mode: 'insensitive' } },
@@ -27,35 +23,24 @@ export async function GET(request: NextRequest) {
                 { manufacturer: { contains: search, mode: 'insensitive' } },
             ];
         }
-
         if (type) where.type = type;
-
-        if (categoryId) {
-            where.categories = { some: { categoryId } };
-        }
+        if (categoryId) where.categories = { some: { categoryId } };
 
         let medicines = await prisma.medicine.findMany({
             where,
-            include: {
-                categories: { include: { category: true } },
-            },
+            include: { categories: { include: { category: true } } },
             orderBy: { name: 'asc' },
         });
 
-        if (stockStatus === 'low') {
-            medicines = medicines.filter(m => m.currentStock > 0 && m.currentStock <= m.reorderLevel);
-        } else if (stockStatus === 'out') {
-            medicines = medicines.filter(m => m.currentStock === 0);
-        }
+        if (stockStatus === 'low') medicines = medicines.filter(m => m.currentStock > 0 && m.currentStock <= m.reorderLevel);
+        else if (stockStatus === 'out') medicines = medicines.filter(m => m.currentStock === 0);
 
         return NextResponse.json(medicines);
     } catch (error) {
-        console.error('Error fetching medicines:', error);
         return NextResponse.json({ error: 'Failed to fetch medicines' }, { status: 500 });
     }
 }
 
-// POST: Create single medicine
 export async function POST(request: NextRequest) {
     try {
         const token = getTokenFromCookieString(request.headers.get('cookie'));
@@ -64,52 +49,36 @@ export async function POST(request: NextRequest) {
         if (!payload?.clinicId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         const body = await request.json();
-        const {
-            name, genericName, manufacturer, type, strength, unit, description,
+        const { name, genericName, manufacturer, type, strength, unit, description,
             currentStock, reorderLevel, purchasePrice, sellingPrice, mrp,
-            batchNumber, expiryDate, barcode, categoryIds,
-        } = body;
+            batchNumber, expiryDate, barcode, categoryIds } = body;
 
         const barcodeValue = barcode && barcode.trim() !== '' ? barcode.trim() : null;
 
         const medicine = await prisma.medicine.create({
             data: {
-                clinicId: payload.clinicId, // ✅ Always from JWT
-                name,
-                genericName: genericName || null,
-                manufacturer: manufacturer || null,
-                type,
-                strength: strength || null,
-                unit,
-                description: description || null,
-                currentStock: parseInt(currentStock) || 0,
-                reorderLevel: parseInt(reorderLevel) || 10,
-                purchasePrice: parseFloat(purchasePrice) || 0,
-                sellingPrice: parseFloat(sellingPrice) || 0,
-                mrp: parseFloat(mrp) || 0,
-                batchNumber: batchNumber || null,
-                expiryDate: expiryDate ? new Date(expiryDate) : null,
-                barcode: barcodeValue,
+                clinicId: payload.clinicId,
+                name, genericName: genericName || null, manufacturer: manufacturer || null,
+                type, strength: strength || null, unit, description: description || null,
+                currentStock: parseInt(currentStock) || 0, reorderLevel: parseInt(reorderLevel) || 10,
+                purchasePrice: parseFloat(purchasePrice) || 0, sellingPrice: parseFloat(sellingPrice) || 0,
+                mrp: parseFloat(mrp) || 0, batchNumber: batchNumber || null,
+                expiryDate: expiryDate ? new Date(expiryDate) : null, barcode: barcodeValue,
             },
         });
 
         if (categoryIds && categoryIds.length > 0) {
             await prisma.medicineCategory.createMany({
-                data: categoryIds.map((categoryId: string) => ({
-                    medicineId: medicine.id,
-                    categoryId,
-                })),
+                data: categoryIds.map((categoryId: string) => ({ medicineId: medicine.id, categoryId })),
             });
         }
 
         if (currentStock > 0) {
             await prisma.stockTransaction.create({
                 data: {
-                    clinicId: payload.clinicId, // ✅ Always from JWT
-                    medicineId: medicine.id,
-                    type: 'IN',
-                    quantity: parseInt(currentStock),
-                    balanceAfter: parseInt(currentStock),
+                    clinicId: payload.clinicId,
+                    medicineId: medicine.id, type: 'IN',
+                    quantity: parseInt(currentStock), balanceAfter: parseInt(currentStock),
                     reason: 'Initial Stock',
                 },
             });
@@ -117,19 +86,9 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json(medicine, { status: 201 });
     } catch (error: any) {
-        console.error('Error creating medicine:', error);
-
         if (error.code === 'P2002') {
-            const field = error.meta?.target?.[0] || 'field';
-            return NextResponse.json(
-                { error: `A medicine with this ${field} already exists` },
-                { status: 400 }
-            );
+            return NextResponse.json({ error: `A medicine with this ${error.meta?.target?.[0]} already exists` }, { status: 400 });
         }
-
-        return NextResponse.json(
-            { error: 'Failed to create medicine', details: error.message },
-            { status: 500 }
-        );
+        return NextResponse.json({ error: 'Failed to create medicine', details: error.message }, { status: 500 });
     }
 }

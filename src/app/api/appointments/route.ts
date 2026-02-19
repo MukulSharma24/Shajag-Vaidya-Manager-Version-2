@@ -3,9 +3,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getUserFromToken, getTokenFromCookieString } from '@/lib/auth';
 
-// ============================================
-// GET /api/appointments
-// ============================================
 export async function GET(request: NextRequest) {
     try {
         const token = getTokenFromCookieString(request.headers.get('cookie'));
@@ -18,48 +15,27 @@ export async function GET(request: NextRequest) {
         const endDate = searchParams.get('endDate');
         const status = searchParams.get('status');
 
-        // ✅ Always scoped to clinic
-        const where: any = {
-            clinicId: payload.clinicId,
-        };
-
+        const where: any = { clinicId: payload.clinicId };
         if (startDate || endDate) {
             where.appointmentDate = {};
             if (startDate) where.appointmentDate.gte = new Date(startDate);
             if (endDate) where.appointmentDate.lt = new Date(endDate);
         }
-
-        if (status) {
-            where.status = status;
-        }
-
-        console.log('📅 Fetching appointments with filters:', where);
+        if (status) where.status = status;
 
         const appointments = await prisma.appointment.findMany({
             where,
             include: {
                 patient: {
                     select: {
-                        id: true,
-                        registrationId: true,
-                        fullName: true,
-                        age: true,
-                        gender: true,
-                        phoneNumber: true,
-                        email: true,
-                        bloodGroup: true,
-                        addressLine1: true,
-                        constitutionType: true,
+                        id: true, registrationId: true, fullName: true,
+                        age: true, gender: true, phoneNumber: true,
+                        email: true, bloodGroup: true, addressLine1: true, constitutionType: true,
                     },
                 },
             },
-            orderBy: [
-                { appointmentDate: 'asc' },
-                { appointmentTime: 'asc' },
-            ],
+            orderBy: [{ appointmentDate: 'asc' }, { appointmentTime: 'asc' }],
         });
-
-        console.log('✅ Found', appointments.length, 'appointments');
 
         return NextResponse.json({ appointments });
     } catch (error) {
@@ -68,9 +44,6 @@ export async function GET(request: NextRequest) {
     }
 }
 
-// ============================================
-// POST /api/appointments
-// ============================================
 export async function POST(request: NextRequest) {
     try {
         const token = getTokenFromCookieString(request.headers.get('cookie'));
@@ -82,7 +55,7 @@ export async function POST(request: NextRequest) {
 
         const appointment = await prisma.appointment.create({
             data: {
-                clinicId: payload.clinicId, // ✅ Always from JWT
+                clinicId: payload.clinicId,
                 patientId: body.patientId || null,
                 guestName: body.guestName || null,
                 guestPhone: body.guestPhone || null,
@@ -96,12 +69,7 @@ export async function POST(request: NextRequest) {
             },
             include: {
                 patient: {
-                    select: {
-                        id: true,
-                        fullName: true,
-                        phoneNumber: true,
-                        email: true,
-                    },
+                    select: { id: true, fullName: true, phoneNumber: true, email: true },
                 },
             },
         });
