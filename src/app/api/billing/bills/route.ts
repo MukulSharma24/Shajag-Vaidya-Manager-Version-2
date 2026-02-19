@@ -84,7 +84,8 @@ export async function POST(req: NextRequest) {
             subtotal += itemSubtotal;
             return { itemName: item.itemName, description: item.description || '', itemType: item.itemType,
                 quantity: item.quantity, unitPrice: item.unitPrice, taxPercentage: item.taxPercentage || 0,
-                taxAmount, discountAmount: item.discountAmount || 0, totalAmount: itemSubtotal + taxAmount - (item.discountAmount || 0) };
+                taxAmount, discountAmount: item.discountAmount || 0,
+                totalAmount: itemSubtotal + taxAmount - (item.discountAmount || 0) };
         });
 
         const finalDiscountAmount = discountAmount || (subtotal * discountPercentage) / 100;

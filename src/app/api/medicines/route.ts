@@ -53,8 +53,6 @@ export async function POST(request: NextRequest) {
             currentStock, reorderLevel, purchasePrice, sellingPrice, mrp,
             batchNumber, expiryDate, barcode, categoryIds } = body;
 
-        const barcodeValue = barcode && barcode.trim() !== '' ? barcode.trim() : null;
-
         const medicine = await prisma.medicine.create({
             data: {
                 clinicId: payload.clinicId,
@@ -63,7 +61,8 @@ export async function POST(request: NextRequest) {
                 currentStock: parseInt(currentStock) || 0, reorderLevel: parseInt(reorderLevel) || 10,
                 purchasePrice: parseFloat(purchasePrice) || 0, sellingPrice: parseFloat(sellingPrice) || 0,
                 mrp: parseFloat(mrp) || 0, batchNumber: batchNumber || null,
-                expiryDate: expiryDate ? new Date(expiryDate) : null, barcode: barcodeValue,
+                expiryDate: expiryDate ? new Date(expiryDate) : null,
+                barcode: barcode && barcode.trim() !== '' ? barcode.trim() : null,
             },
         });
 

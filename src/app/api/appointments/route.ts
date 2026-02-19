@@ -1,4 +1,3 @@
-// src/app/api/appointments/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getUserFromToken, getTokenFromCookieString } from '@/lib/auth';
@@ -39,7 +38,7 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json({ appointments });
     } catch (error) {
-        console.error('❌ Error fetching appointments:', error);
+        console.error('Error fetching appointments:', error);
         return NextResponse.json({ error: 'Failed to fetch appointments' }, { status: 500 });
     }
 }

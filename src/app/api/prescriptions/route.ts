@@ -67,9 +67,8 @@ export async function POST(request: NextRequest) {
             medicines, instructions, dietaryAdvice, followUpDate, followUpNotes,
             status = 'DRAFT', createdBy } = body;
 
-        if (!patientId || !chiefComplaints) {
+        if (!patientId || !chiefComplaints)
             return NextResponse.json({ error: 'Patient and chief complaints are required' }, { status: 400 });
-        }
 
         const prescription = await prisma.prescription.create({
             data: {
