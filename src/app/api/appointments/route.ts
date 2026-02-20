@@ -8,15 +8,11 @@ async function getClinicId(payload: any): Promise<string | null> {
     if (payload?.clinicId) return payload.clinicId;
 
     if (payload?.userId) {
-        const user = await prisma.user.findUnique({
-            where: { id: payload.userId },
-            select: {
-                clinicId: true,
-                staff: { select: { clinicId: true } },
-            },
+        const staff = await prisma.staff.findFirst({
+            where: { userId: payload.userId },
+            select: { clinicId: true },
         });
-        if (user?.clinicId) return user.clinicId;
-        if (user?.staff?.clinicId) return user.staff.clinicId;
+        if (staff?.clinicId) return staff.clinicId;
     }
 
     const defaultClinic = await prisma.clinic.findFirst({ select: { id: true } });
