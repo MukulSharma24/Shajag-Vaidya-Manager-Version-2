@@ -49,13 +49,34 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // ── Resolve clinicId ──
-        // Priority: user.clinicId (direct) → staff.clinicId → patient.clinicId
-        const clinicId =
+        // ── Resolve clinicId with GUARANTEED fallback ──
+        let clinicId: string | undefined =
             user.clinicId ??
             user.staff?.clinicId ??
             user.patient?.clinicId ??
             undefined;
+
+        // ✅ NEW: If still no clinicId, get default clinic from database
+        if (!clinicId) {
+            const defaultClinic = await prisma.clinic.findFirst({
+                select: { id: true },
+            });
+
+            if (defaultClinic) {
+                clinicId = defaultClinic.id;
+
+                // Also update the user record with this clinicId for future logins
+                await prisma.user.update({
+                    where: { id: user.id },
+                    data: { clinicId: defaultClinic.id },
+                });
+
+                console.log(`✅ Assigned default clinic ${clinicId} to user ${user.email}`);
+            }
+        }
+
+        // ✅ Log for debugging
+        console.log(`🔐 Login: ${user.email}, Role: ${user.role}, ClinicId: ${clinicId || 'NONE'}`);
 
         // ── Create JWT with clinicId and patientId for proper data scoping ──
         const token = await signJWT({
@@ -63,9 +84,7 @@ export async function POST(request: NextRequest) {
             email: user.email,
             name: user.name,
             role: user.role,
-            // ✅ ADDED: clinicId so every API route can scope queries without extra DB lookup
-            clinicId,
-            // Include patientId in JWT so patient APIs can filter data
+            clinicId: clinicId, // ✅ Now guaranteed to have value (or undefined only if no clinics exist)
             patientId: user.patient?.id,
         });
 
@@ -94,7 +113,7 @@ export async function POST(request: NextRequest) {
         response.cookies.set('auth-token', token, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
-            sameSite: 'none',
+            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // ✅ Fixed: 'lax' for localhost
             maxAge: 60 * 60 * 24 * 7, // 7 days
             path: '/',
         });
