@@ -31,11 +31,12 @@ export async function GET() {
         const user = await prisma.user.findUnique({
             where: { id: currentUser.userId },
             include: {
-                patient: { select: { id: true } },
+                patient: { select: { id: true, clinicId: true } },
                 staff: {
                     select: {
                         id: true,
                         employeeId: true,
+                        clinicId: true,
                     },
                 },
             },
@@ -56,12 +57,23 @@ export async function GET() {
             );
         }
 
+        // ✅ FIXED: Resolve clinicId from JWT or from related records
+        // Priority: JWT clinicId → user.clinicId → staff.clinicId → patient.clinicId
+        const clinicId =
+            currentUser.clinicId ??
+            user.clinicId ??
+            user.staff?.clinicId ??
+            user.patient?.clinicId ??
+            null;
+
         return NextResponse.json({
             user: {
                 id: user.id,
                 email: user.email,
                 name: user.name,
                 role: user.role,
+                // ✅ ADDED: clinicId - this was missing!
+                clinicId: clinicId,
                 patientId: user.patient?.id ?? null,
                 staffId: user.staff?.id ?? null,
                 employeeId: user.staff?.employeeId ?? null,
